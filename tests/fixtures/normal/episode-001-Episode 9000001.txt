@@ -1,0 +1,73 @@
+EPISODE NUMBER: Episode 1
+EPISODE LOGLINE: A young lighthouse keeper finds a sealed brass tube washed onto the rocks during a gale.
+CONTINUITY NOTES: Opening episode. Introduces Mara Quill and the old keeper Tobin Vale.
+
+--- SCRIPT START ---
+
+SCENE 01
+Scene heading: EXT. BASALT POINT – NIGHT
+Scene start: 00:00.00
+Scene end: 00:30.00
+
+Actions and dialogue:
+
+**CAMERA:**
+Start: (00:00.00) | End: (00:06.00)
+Slow aerial drift over black waves toward a single blinking lamp on a cliff.
+
+**ACTION:**
+Start: (00:02.00) | End: (00:06.00)
+Mara braces against the railing as spray soaks her oilskin coat.
+
+**SOUND FX:**
+Start: (00:06.00) | End: (00:08.50)
+[Foghorn moans twice, then cuts out]
+
+**MARA QUILL (Startled):**
+Start: (00:08.50) | End: (00:12.00)
+The horn never stops on its own. Something is wrong with the engine room.
+
+**CAMERA:**
+Start: (00:12.00) | End: (00:18.00)
+Low angle on a dented brass tube rolling in the foam below the steps.
+
+**TOBIN VALE (Gruff):**
+Start: (00:18.00) | End: (00:24.00)
+Leave it, girl. Whatever the sea gives back, it wants returned.
+
+**MARA QUILL (Defiant):**
+Start: (00:24.00) | End: (00:30.00)
+Then it can come up these stairs and ask me for it.
+
+SCENE 02
+Scene heading: INT. LAMP ROOM – NIGHT
+Scene start: 00:30.00
+Scene end: 01:10.00
+
+Actions and dialogue:
+
+**CAMERA:**
+Start: (00:30.00) | End: (00:38.00)
+Close-up of wax seals cracking under a kitchen knife.
+
+**ACTION:**
+Start: (00:31.00) | End: (00:38.00)
+Mara unrolls a damp map marked with a red spiral far out at sea.
+
+**TOBIN VALE (Fearful):**
+Start: (00:38.00) | End: (00:46.00)
+I burned a map just like that one forty winters ago.
+
+**MARA QUILL (Curious):**
+Start: (00:46.00) | End: (00:55.00)
+Then you know where it leads, and you are going to tell me tonight.
+
+**SOUND FX:**
+Start: (00:55.00) | End: (01:00.00)
+Thunder rolls; the great lamp flickers out.
+
+**CAMERA:**
+Start: (01:00.00) | End: (01:10.00)
+Darkness, then a faint green glow rising from the map in her hands.
+
+--- SCRIPT END ---

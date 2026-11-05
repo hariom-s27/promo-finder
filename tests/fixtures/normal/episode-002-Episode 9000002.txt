@@ -1,0 +1,42 @@
+EPISODE NUMBER: Episode 2
+EPISODE LOGLINE: A harbour captain arrives at dawn demanding the brass tube, and Mara lies to his face.
+CONTINUITY NOTES: Map is hidden inside the lamp housing. Captain Ives Rennick first appears.
+
+--- SCRIPT START ---
+
+SCENE 01
+Scene heading: EXT. LIGHTHOUSE DOOR – DAWN
+Scene start: 00:00.00
+Scene end: 00:45.00
+
+Actions and dialogue:
+
+**CAMERA:**
+Start: (00:00.00) | End: (00:05.00)
+A rowboat scrapes onto the shingle beneath a pale pink sky.
+
+**IVES RENNICK (Smooth):**
+Start: (00:05.00) | End: (00:12.00)
+Good morning. The harbour master sent me to collect lost property.
+
+**MARA QUILL (Guarded):**
+Start: (00:12.00) | End: (00:18.00)
+We found nothing but seaweed and a dead gull.
+
+**ACTION:**
+Start: (00:18.00) | End: (00:24.00)
+Rennick steps past her and runs a gloved finger along the wet doorframe.
+
+**IVES RENNICK (Menacing):**
+Start: (00:24.00) | End: (00:33.00)
+Strange. Seaweed does not usually leave wax on a doorframe.
+
+**SOUND FX:**
+Start: (00:33.00) | End: (00:36.00)
+Gulls screech overhead.
+
+**CAMERA:**
+Start: (00:36.00) | End: (00:45.00)
+Push in on Mara as she glances, very briefly, up toward the lamp.
+
+--- SCRIPT END ---

@@ -1,0 +1,33 @@
+EPISODE NUMBER: Episode 23
+EPISODE LOGLINE: Broken block fixture.
+CONTINUITY NOTES: None.
+
+--- SCRIPT START ---
+
+SCENE 01
+Scene heading: INT. CELLAR – NIGHT
+Scene start: 00:00.00
+Scene end: 00:30.00
+
+Actions and dialogue:
+
+**CAMERA:**
+Start: (00:00.00) | End: (00:05.00)
+A lantern swings from a hook, throwing shadows over barrels.
+
+**ACTION:**
+Mara counts the barrels twice and frowns.
+
+**SOUND FX:**
+Start: (ab:cd) | End: (00:12.00)
+Water drips somewhere in the dark.
+
+**MARA QUILL (Whispering):**
+Start: (00:12.00) | End: (00:18.00)
+One of these barrels was not here yesterday.
+
+**CAMERA:**
+Start: (00:18.00) | End: (00:30.00)
+Slow tilt down to fresh boot prints in the dust.
+
+--- SCRIPT END ---

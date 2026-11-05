@@ -1,0 +1,27 @@
+EPISODE NUMBER: Episode 21
+EPISODE LOGLINE: Multi-line text fixture.
+CONTINUITY NOTES: None.
+
+--- SCRIPT START ---
+
+SCENE 01
+Scene heading: INT. BOATHOUSE – DAY
+Scene start: 00:00.00
+Scene end: 00:20.00
+
+Actions and dialogue:
+
+**ACTION:**
+Start: (00:00.00) | End: (00:05.00)
+Tobin sands the hull of an upturned dinghy.
+He stops when he hears footsteps on the gravel.
+
+**MARA QUILL (Tired):**
+Start: (00:05.00) | End: (00:10.00)
+I rowed all night and found only fog.
+
+**CAMERA:**
+Start: (00:10.00) | End: (00:20.00)
+Wide shot of the boathouse doors swinging open.
+
+--- SCRIPT END ---

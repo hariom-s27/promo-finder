@@ -1,0 +1,18 @@
+EPISODE NUMBER: Episode 11
+EPISODE LOGLINE: Filename and header disagree in this fixture.
+CONTINUITY NOTES: None.
+
+--- SCRIPT START ---
+
+SCENE 01
+Scene heading: EXT. JETTY – DAY
+Scene start: 00:00.00
+Scene end: 00:10.00
+
+Actions and dialogue:
+
+**CAMERA:**
+Start: (00:00.00) | End: (00:10.00)
+Ropes creak against weathered posts as the tide comes in.
+
+--- SCRIPT END ---

@@ -1,0 +1,30 @@
+EPISODE NUMBER: Episode 22
+EPISODE LOGLINE: Odd time formats fixture.
+CONTINUITY NOTES: None.
+
+--- SCRIPT START ---
+
+SCENE 01
+Scene heading: EXT. CLIFF PATH – DUSK
+Scene start: 0:00
+Scene end: 00:01:05.00
+
+Actions and dialogue:
+
+**CAMERA:**
+Start: (0:00) | End: (0:05)
+Handheld shot climbing the narrow path.
+
+**ACTION:**
+Start: (00:00:05.50) | End: (00:00:09.25)
+Mara slips on loose stones and grabs a root.
+
+**SOUND FX:**
+Start: (00:09) | End: (00:12)
+Pebbles clatter down the cliff face.
+
+**TOBIN VALE (Alarmed):**
+Start: (0:12.5) | End: (1:05.125)
+Hold still and do not look down at the water.
+
+--- SCRIPT END ---

@@ -1,0 +1,33 @@
+EPISODE NUMBER: Episode 24
+EPISODE LOGLINE: All-caps scene field labels fixture.
+CONTINUITY NOTES: None.
+
+--- SCRIPT START ---
+
+SCENE 01
+SCENE HEADING: INT. KEEPER'S KITCHEN – MORNING
+SCENE START: 00:00.00
+SCENE END: 00:15.00
+
+ACTIONS AND DIALOGUE:
+
+**ACTION:**
+Start: (00:00.00) | End: (00:07.00)
+Tobin pours two mugs of bitter tea and pushes one across the table.
+
+**TOBIN VALE (Weary):**
+Start: (00:07.00) | End: (00:15.00)
+Drink it before you start asking questions.
+
+SCENE 02
+SCENE HEADING: EXT. GARDEN – MORNING
+SCENE START: 00:15.00
+SCENE END: 00:25.00
+
+ACTIONS AND DIALOGUE:
+
+**CAMERA:**
+Start: (00:15.00) | End: (00:25.00)
+Wind flattens a row of cabbages beside a crooked fence.
+
+--- SCRIPT END ---
