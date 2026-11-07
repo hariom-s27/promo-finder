@@ -3,7 +3,7 @@
 
 Fails (exit 1) if:
   * a staged path is under data/, outputs/, .cache/ or .venv/, is eval/gold.csv or
-    eval/gold_v*.csv (gold labels, committed only at P08), or is any .env file;
+    eval/gold_v*.csv (gold labels, committed only at P08), any *.xlsx workbook, or any .env file;
   * a staged file contains 8+ consecutive words that also appear in any file in data_dir
     (lower-cased, whitespace collapsed, 8-word shingle set).
 On a hit it prints only path:line, never the matched text. .env files are never opened.
@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SHINGLE = 8
 BLOCKED_TOP = ("data", "outputs", ".cache", ".venv")
 # gold label files are committed only at P08 (D28); the template is allowed
-BLOCKED_GLOBS = ("eval/gold.csv", "eval/gold_v*.csv")
+BLOCKED_GLOBS = ("eval/gold.csv", "eval/gold_v*.csv", "*.xlsx")
 WALK_SKIP = {".git", ".venv", "outputs", ".cache", "data", "__pycache__", ".pytest_cache", "build", "dist"}
 # Windows containing a time token (e.g. 00:04.80) are format, not content: skip them so
 # the shared screenplay layout of invented fixtures does not trigger false hits.
@@ -57,6 +57,8 @@ def path_problems(paths: Iterable[str]) -> list[str]:
         parts = PurePosixPath(posix).parts
         if parts and parts[0] in BLOCKED_TOP:
             bad.append(f"{p}: blocked path ({parts[0]}/)")
+        elif fnmatch.fnmatchcase(posix.lower(), "*.xlsx"):
+            bad.append(f"{p}: blocked path (Excel workbook)")
         elif any(fnmatch.fnmatchcase(posix, g) for g in BLOCKED_GLOBS):
             bad.append(f"{p}: blocked path (gold labels, committed only at P08)")
         elif is_env_file(p):
@@ -165,7 +167,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     hits: list[str] = []
     checked = 0
     for p in paths:
-        if is_env_file(p) or PurePosixPath(p).parts[:1] and PurePosixPath(p).parts[0] in BLOCKED_TOP:
+        if (is_env_file(p) or fnmatch.fnmatchcase(p.lower(), "*.xlsx")
+                or PurePosixPath(p).parts[:1] and PurePosixPath(p).parts[0] in BLOCKED_TOP):
             continue  # never opened; blocked paths are reported above
         raw = read_staged(root, p) if staged_mode else (root / p).read_bytes()
         if raw is None or b"\x00" in raw[:8000]:

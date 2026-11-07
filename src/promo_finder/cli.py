@@ -1,4 +1,4 @@
-"""Command line: python -m promo_finder {parse, ping, list-lines, check-gold}.
+"""Command line for parsing, labelling, checking and the optional model ping.
 
 Prints counts only, never script text, names or keys.
 """
@@ -99,6 +99,54 @@ def cmd_check_gold(cfg: Config, args) -> int:
     return 0 if rep.ok else 1
 
 
+def cmd_make_workbook(cfg: Config, args) -> int:
+    from openpyxl.utils.exceptions import IllegalCharacterError
+
+    from .workbook import WorkbookError, template_header, write_workbook
+
+    out = cfg.root / Path(args.out)
+    if out.exists() and not args.force:
+        print("refused: workbook already exists; use --force only to replace it deliberately", file=sys.stderr)
+        return 1
+    episodes = _load_episodes(cfg, args)
+    if episodes is None:
+        return 2
+    try:
+        eps, rows, scenes = write_workbook(episodes, out, template_header(cfg.root), args.force)
+    except FileExistsError:
+        print("refused: workbook already exists; use --force only to replace it deliberately", file=sys.stderr)
+        return 1
+    except WorkbookError as e:
+        print(f"make-workbook: {e}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, IllegalCharacterError):
+        print("make-workbook: unable to write workbook; check output access and source format", file=sys.stderr)
+        return 1
+    try:
+        shown = out.relative_to(cfg.root).as_posix()
+    except ValueError:
+        shown = str(out)
+    print(f"{shown} episode_sheets={eps} line_rows={rows} scene_rows={scenes}")
+    return 0
+
+
+def cmd_export_gold(cfg: Config, args) -> int:
+    from zipfile import BadZipFile
+
+    from .workbook import WorkbookError, export_labels, template_header
+
+    xlsx, out = cfg.root / Path(args.xlsx), cfg.root / Path(args.out)
+    try:
+        export_labels(xlsx, out, template_header(cfg.root), cfg.root / "eval" / "HASHES.md")
+    except WorkbookError as e:
+        print(f"export-gold: {e}", file=sys.stderr)
+        return 1
+    except (OSError, BadZipFile, KeyError, ValueError):
+        print("export-gold: unable to read workbook or write CSV; check paths and file access", file=sys.stderr)
+        return 1
+    return cmd_check_gold(cfg, argparse.Namespace(csv=str(out), data_dir=args.data_dir))
+
+
 def _scrub(cfg: Config, text: str) -> str:
     for v in secret_values(cfg):
         text = text.replace(v, "***")
@@ -191,11 +239,20 @@ def main(argv: list[str] | None = None) -> int:
     cg = sub.add_parser("check-gold", help="validate a gold label sheet (eval/gold_rubric.md)")
     cg.add_argument("csv", help="path to the gold CSV")
     cg.add_argument("--data-dir", help="override data_dir")
+    mw = sub.add_parser("make-workbook", help="create an Excel workbook for held-out labelling")
+    mw.add_argument("--out", default="outputs/labelling/gold_labelling.xlsx")
+    mw.add_argument("--data-dir", help="override data_dir")
+    mw.add_argument("--force", action="store_true", help="deliberately replace an existing workbook")
+    eg = sub.add_parser("export-gold", help="export LABELS columns A-M and run check-gold")
+    eg.add_argument("--xlsx", default="outputs/labelling/gold_labelling.xlsx")
+    eg.add_argument("--out", default="eval/gold.csv")
+    eg.add_argument("--data-dir", help="override data_dir")
     args = ap.parse_args(argv)
     try:
         cfg = load_config()
     except ConfigError as e:
         print(f"config error: {e}", file=sys.stderr)
         return 2
-    cmds = {"parse": cmd_parse, "ping": cmd_ping, "list-lines": cmd_list_lines, "check-gold": cmd_check_gold}
+    cmds = {"parse": cmd_parse, "ping": cmd_ping, "list-lines": cmd_list_lines, "check-gold": cmd_check_gold,
+            "make-workbook": cmd_make_workbook, "export-gold": cmd_export_gold}
     return cmds[args.cmd](cfg, args)

@@ -43,6 +43,24 @@ def test_gold_label_files_blocked_but_template_allowed():
                                 "eval/gold_rubric.md", "eval/.gitkeep", "tests/eval/gold.csv"]) == []
 
 
+def test_xlsx_blocked_anywhere():
+    paths = ["labels.xlsx", "nested/labels.xlsx", "nested\\labels.XLSX"]
+    assert len(guard.path_problems(paths)) == 3
+
+
+def test_staged_workbook_blocked_without_reading_cells(setup, monkeypatch, capsys):
+    repo, data = setup
+    monkeypatch.setattr(guard, "in_git_repo", lambda root: True)
+    monkeypatch.setattr(guard, "staged_files", lambda root: ["nested/labels.xlsx"])
+
+    def never_read(*args):
+        pytest.fail("guard must not open a workbook")
+
+    monkeypatch.setattr(guard, "read_staged", never_read)
+    assert guard.main(["--root", str(repo), "--data-dir", str(data)]) == 1
+    assert "nested/labels.xlsx: blocked path (Excel workbook)" in capsys.readouterr().out
+
+
 def test_scan_hits_8_words_case_and_space_insensitive(setup):
     _, data = setup
     sh = guard.build_shingles(data)

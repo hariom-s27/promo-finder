@@ -1,6 +1,7 @@
 # data and generated output (may contain script text)
 data/
 outputs/
+*.xlsx
 .cache/
 
 # gold labels: never committed before P08 (D28); the template IS committed
