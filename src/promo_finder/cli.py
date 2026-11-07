@@ -1,4 +1,7 @@
-"""Command line: python -m promo_finder {parse, ping}. Prints counts only, never script text or keys."""
+"""Command line: python -m promo_finder {parse, ping, list-lines, check-gold}.
+
+Prints counts only, never script text, names or keys.
+"""
 
 from __future__ import annotations
 
@@ -42,6 +45,58 @@ def cmd_parse(cfg: Config, args) -> int:
     print("validator: " + json.dumps(t["validator"]))
     print("wrote outputs/parsed/E##.json and outputs/parse_report.json")
     return 0
+
+
+def _load_episodes(cfg: Config, args):
+    from .parser import parse_dir
+
+    data_dir = Path(args.data_dir) if args.data_dir else cfg.data_dir
+    if not data_dir.is_dir():
+        print("data_dir not found (set data_dir in config.yaml or KUKU_DATA_DIR)", file=sys.stderr)
+        return None
+    episodes, _ = parse_dir(data_dir)
+    return episodes
+
+
+def cmd_list_lines(cfg: Config, args) -> int:
+    from .labelling import parse_eps, write_labelling
+
+    try:
+        eps = parse_eps(args.eps)
+    except ValueError as e:
+        print(f"--eps: {e}", file=sys.stderr)
+        return 2
+    episodes = _load_episodes(cfg, args)
+    if episodes is None:
+        return 2
+    out_dir = cfg.root / "outputs" / "labelling"
+    written, missing = write_labelling(episodes, eps, out_dir)
+    for p, rows, scenes in written:
+        print(f"{p.relative_to(cfg.root).as_posix()} rows={rows} scenes={scenes}")
+    print(f"written: {len(written)} files")
+    if missing:
+        print("not found: " + ",".join(str(n) for n in missing), file=sys.stderr)
+    return 0
+
+
+def cmd_check_gold(cfg: Config, args) -> int:
+    from .checker import build_index
+    from .gold import check_sheet, format_report, read_sheet
+
+    path = Path(args.csv)
+    if not path.is_file():
+        print(f"file not found: {path}", file=sys.stderr)
+        return 2
+    header, rows, file_warnings = read_sheet(path)
+    episodes = _load_episodes(cfg, args)
+    if episodes is None:
+        return 2
+    index = build_index(episodes)
+    speakers = {ln.speaker for e in episodes for ln in e.lines if ln.speaker}
+    rep = check_sheet(header, rows, index, speakers, cfg)
+    for line in format_report(rep, file_warnings):
+        print(line)
+    return 0 if rep.ok else 1
 
 
 def _scrub(cfg: Config, text: str) -> str:
@@ -128,10 +183,19 @@ def main(argv: list[str] | None = None) -> int:
     q = sub.add_parser("ping", help="one tiny call per configured model")
     q.add_argument("--no-cache", action="store_true", help="bypass the LLM cache")
     q.add_argument("--dry-run", action="store_true", help="estimate tokens, make no calls")
+    from .labelling import HELD_OUT_SPEC
+
+    ll = sub.add_parser("list-lines", help="write outputs/labelling/E##_lines.md (labelling aid)")
+    ll.add_argument("--eps", default=HELD_OUT_SPEC, help=f"episode list/ranges (default {HELD_OUT_SPEC})")
+    ll.add_argument("--data-dir", help="override data_dir")
+    cg = sub.add_parser("check-gold", help="validate a gold label sheet (eval/gold_rubric.md)")
+    cg.add_argument("csv", help="path to the gold CSV")
+    cg.add_argument("--data-dir", help="override data_dir")
     args = ap.parse_args(argv)
     try:
         cfg = load_config()
     except ConfigError as e:
         print(f"config error: {e}", file=sys.stderr)
         return 2
-    return {"parse": cmd_parse, "ping": cmd_ping}[args.cmd](cfg, args)
+    cmds = {"parse": cmd_parse, "ping": cmd_ping, "list-lines": cmd_list_lines, "check-gold": cmd_check_gold}
+    return cmds[args.cmd](cfg, args)

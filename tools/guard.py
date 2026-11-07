@@ -2,7 +2,8 @@
 """Leak guard. Run before every commit.
 
 Fails (exit 1) if:
-  * a staged path is under data/, outputs/, .cache/ or .venv/, or is any .env file;
+  * a staged path is under data/, outputs/, .cache/ or .venv/, is eval/gold.csv or
+    eval/gold_v*.csv (gold labels, committed only at P08), or is any .env file;
   * a staged file contains 8+ consecutive words that also appear in any file in data_dir
     (lower-cased, whitespace collapsed, 8-word shingle set).
 On a hit it prints only path:line, never the matched text. .env files are never opened.
@@ -15,6 +16,7 @@ Modes:
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import os
 import re
 import subprocess
@@ -25,6 +27,8 @@ from typing import Iterable, Optional
 ROOT = Path(__file__).resolve().parents[1]
 SHINGLE = 8
 BLOCKED_TOP = ("data", "outputs", ".cache", ".venv")
+# gold label files are committed only at P08 (D28); the template is allowed
+BLOCKED_GLOBS = ("eval/gold.csv", "eval/gold_v*.csv")
 WALK_SKIP = {".git", ".venv", "outputs", ".cache", "data", "__pycache__", ".pytest_cache", "build", "dist"}
 # Windows containing a time token (e.g. 00:04.80) are format, not content: skip them so
 # the shared screenplay layout of invented fixtures does not trigger false hits.
@@ -49,9 +53,12 @@ def is_env_file(path: str) -> bool:
 def path_problems(paths: Iterable[str]) -> list[str]:
     bad = []
     for p in paths:
-        parts = PurePosixPath(p.replace("\\", "/")).parts
+        posix = p.replace("\\", "/")
+        parts = PurePosixPath(posix).parts
         if parts and parts[0] in BLOCKED_TOP:
             bad.append(f"{p}: blocked path ({parts[0]}/)")
+        elif any(fnmatch.fnmatchcase(posix, g) for g in BLOCKED_GLOBS):
+            bad.append(f"{p}: blocked path (gold labels, committed only at P08)")
         elif is_env_file(p):
             bad.append(f"{p}: env file")
     return bad

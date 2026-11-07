@@ -3,6 +3,10 @@ data/
 outputs/
 .cache/
 
+# gold labels: never committed before P08 (D28); the template IS committed
+eval/gold.csv
+eval/gold_v*.csv
+
 # secrets
 .env
 *.env

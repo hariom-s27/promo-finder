@@ -36,6 +36,13 @@ def test_path_problems():
                                 "docs/environment.md"]) == []
 
 
+def test_gold_label_files_blocked_but_template_allowed():
+    bad = guard.path_problems(["eval/gold.csv", "eval/gold_v2.csv", "eval\\gold_v10.csv"])
+    assert len(bad) == 3 and all("gold labels" in b for b in bad)
+    assert guard.path_problems(["eval/gold_template.csv", "eval/HASHES.md", "eval/match_rule.md",
+                                "eval/gold_rubric.md", "eval/.gitkeep", "tests/eval/gold.csv"]) == []
+
+
 def test_scan_hits_8_words_case_and_space_insensitive(setup):
     _, data = setup
     sh = guard.build_shingles(data)
