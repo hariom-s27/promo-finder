@@ -155,11 +155,69 @@ def test_schema_validator_subset():
         "score": {"type": "integer", "minimum": 0, "maximum": 10},
         "kind": {"enum": ["a", "b"]}}})
     good = {"spans": [{"first": "E01-L001", "last": "E01-L002"}], "score": 3, "kind": "a"}
+    # D48 strips these from provider schemas; local validation still supports them.
+    s["properties"]["spans"]["minItems"] = 1
     assert schema_errors(good, s) == []
     assert schema_errors({**good, "score": True}, s)            # bool is not an integer
     assert schema_errors({**good, "spans": []}, s)
     assert schema_errors({**good, "kind": "z"}, s)
     assert schema_errors({"spans": [{"first": "x"}], "score": 1, "kind": "a"}, s)
+
+
+def test_d48_provider_schema_removes_unsupported_keywords(cfg):
+    schema = {"type": "object", "properties": {"items": {"type": "array", "minItems": 1, "maxItems": 2,
+              "items": {"type": "string", "pattern": "x", "minLength": 1, "maxLength": 2}}}}
+    c, fake, _, _ = make_client(cfg, [resp('{"items": ["x"]}')])
+    c.call("fake_a", MSGS, schema, purpose="t")
+    sent = json.dumps(fake.calls[0]["response_format"])
+    assert not any('"' + key + '"' in sent for key in ("pattern", "minLength", "maxLength", "minItems", "maxItems"))
+
+
+def test_json_object_fallback_and_enum_validation(cfg):
+    cfg.models["fake_b"].structured_output = "auto"
+    request = httpx.Request("POST", "https://fake.invalid/")
+    rejection = openai.BadRequestError("response_format json_schema is not supported", response=httpx.Response(400, request=request), body=None)
+    schema = {"type": "object", "properties": {"answer": {"type": "string", "enum": ["yes", "no"]}}}
+    c, fake, _, _ = make_client(cfg, [rejection, resp('{"answer": "maybe"}'), resp('{"answer": "maybe"}')])
+    with pytest.raises(SchemaError):
+        c.call("fake_b", MSGS, schema, purpose="t")
+    assert len(fake.calls) == 3 and c.calls_made == 3
+    assert fake.calls[0]["response_format"]["type"] == "json_schema"
+    assert fake.calls[1]["response_format"] == {"type": "json_object"}
+    assert "JSON schema" in fake.calls[1]["messages"][0]["content"]
+    assert json.loads(c.mode_path.read_text())["fakeprov/fake-b"] == "json_object"
+
+
+def test_fallback_mode_persists_and_success_is_recorded(cfg):
+    cfg.models["fake_b"].structured_output = "auto"
+    c, fake, _, _ = make_client(cfg, [resp('{"ok": true}')])
+    c.output_modes["fakeprov/fake-b"] = "json_object"
+    result = c.call("fake_b", MSGS, SCHEMA, purpose="t")
+    assert result.response_mode == "json_object"
+    assert fake.calls[0]["response_format"]["type"] == "json_object"
+
+
+def test_run_namespaces_keep_samples_separate(cfg):
+    c, fake, _, _ = make_client(cfg, [resp('{"ok": true}'), resp('{"ok": true}')])
+    a = c.call("fake_b", MSGS, SCHEMA, purpose="t", cache_namespace="item-a:run1", temperature=.7)
+    b = c.call("fake_b", MSGS, SCHEMA, purpose="t", cache_namespace="item-a:run2", temperature=.7)
+    assert a.cache_key != b.cache_key and len(fake.calls) == 2
+    assert c.call("fake_b", MSGS, SCHEMA, purpose="t", cache_namespace="item-a:run2", temperature=.7).cached
+
+
+def test_groq_reserves_input_plus_completion(cfg):
+    cfg.providers["groq"] = cfg.providers["fakeprov"].model_copy(update={"tpm": 8000})
+    cfg.models["fake_b"].provider = "groq"
+    c, _, _, _ = make_client(cfg, [resp('{"ok": true}')])
+    original = c.limiters["groq"].acquire
+    reservations = []
+    def acquire(tokens):
+        reservations.append(tokens)
+        return original(tokens)
+    c.limiters["groq"].acquire = acquire
+    c.call("fake_b", MSGS, SCHEMA, purpose="t", max_completion_tokens=800)
+    assert reservations[0] > 800
+    assert c.limiters["groq"].events[0][1] == 14
 
 
 # ------------------------------------------------------------ family check / config

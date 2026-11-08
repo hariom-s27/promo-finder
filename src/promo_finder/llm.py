@@ -82,6 +82,7 @@ class LLMResult(BaseModel):
     cache_key: str = ""
     api_path: Optional[str] = None  # azure: "v1" or "fallback"
     dry_run: bool = False
+    response_mode: str = "json_schema"
 
 
 # ---------------------------------------------------------------- helpers
@@ -134,6 +135,8 @@ def to_strict(schema: dict) -> dict:
 
     def walk(node: Any) -> None:
         if isinstance(node, dict):
+            for unsupported in ("pattern", "minLength", "maxLength", "minItems", "maxItems"):
+                node.pop(unsupported, None)
             if node.get("type") == "object" or "properties" in node:
                 node.setdefault("additionalProperties", False)
                 if "properties" in node:
@@ -335,10 +338,17 @@ class LLMClient:
         self._budget_lock = threading.Lock()
         self._clients: dict[tuple, Any] = {}
         self.azure_path: dict[str, str] = {}  # provider -> path that worked
+        self.mode_path = root / "outputs/logs/structured_output_modes.json"
+        try:
+            self.output_modes = json.loads(self.mode_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            self.output_modes = {}
 
     # ---------------- public
     def call(self, model_key: str, messages: list, json_schema: dict, *, purpose: str,
-             no_cache: bool = False, reasoning_effort: Optional[str] = None) -> LLMResult:
+             no_cache: bool = False, reasoning_effort: Optional[str] = None,
+             temperature: Optional[float] = None, max_completion_tokens: Optional[int] = None,
+             cache_namespace: str = "", response_validator=None) -> LLMResult:
         m = self.cfg.models.get(model_key)
         if m is None:
             raise LLMError(f"unknown model key '{model_key}'")
@@ -349,22 +359,34 @@ class LLMClient:
         params = dict(m.params)
         if reasoning_effort is not None:
             params["reasoning_effort"] = reasoning_effort
+        if temperature is not None:
+            params["temperature"] = temperature
+        if max_completion_tokens is not None:
+            params["max_completion_tokens"] = max_completion_tokens
         if m.family.lower() == "openai":
             params.pop("temperature", None)  # gpt-5 rule: never send temperature
-        key = cache_key(m.provider, m.model, params, messages, schema)
+        identity = dict(params)
+        if cache_namespace:
+            identity["_namespace"] = cache_namespace
+        if m.structured_output != "strict":
+            identity["_structured_output"] = m.structured_output
+        key = cache_key(m.provider, m.model, identity, messages, schema)
         est_in = self.estimate(_prompt_text(messages, schema))
         base_log = {"purpose": purpose, "provider": m.provider, "model_key": model_key,
                     "prompt_sha256": sha256_hex(_dumps(messages)), "cache_key": key}
 
         if not no_cache:
             hit = self._cache_get(key)
-            if hit is not None:
+            validate_hit = bool(cache_namespace) or m.structured_output == "auto"
+            if hit is not None and (not validate_hit or (not schema_errors(hit.get("data"), schema) and not (
+                    response_validator and response_validator(hit.get("data"))))):
                 res = LLMResult(data=hit["data"], raw_text=hit["raw_text"], model_string=hit["model_string"],
                                 usage=Usage(**hit.get("usage", {})), cached=True, latency_ms=0,
-                                cache_key=key, api_path=hit.get("api_path"))
+                                cache_key=key, api_path=hit.get("api_path"),
+                                response_mode=hit.get("response_mode", "json_schema"))
                 self._log({**base_log, "model_string": res.model_string, "input_tokens": res.usage.input_tokens,
                            "output_tokens": res.usage.output_tokens, "latency_ms": 0, "cached": True,
-                           "error": None, "api_path": res.api_path})
+                           "error": None, "api_path": res.api_path, "response_mode": res.response_mode})
                 return res
 
         if self.dry_run:
@@ -374,12 +396,12 @@ class LLMClient:
                              usage=Usage(input_tokens=est_in, output_tokens=0),
                              cache_key=key, dry_run=True)
 
-        res = self._call_with_retries(m, p, messages, schema, params, est_in, key, base_log)
+        res = self._call_with_retries(m, p, messages, schema, params, est_in, key, base_log, response_validator)
         self._cache_put(key, res)
         return res
 
     # ---------------- internals
-    def _call_with_retries(self, m: ModelCfg, p: ProviderCfg, messages, schema, params, est_in, key, base_log) -> LLMResult:
+    def _call_with_retries(self, m: ModelCfg, p: ProviderCfg, messages, schema, params, est_in, key, base_log, response_validator=None) -> LLMResult:
         max_tok = params.get("max_completion_tokens")
         empty_retry = schema_retry = False
         while True:
@@ -403,7 +425,8 @@ class LLMClient:
             latency = int((self.clock() - t0) * 1000)
             text, finish, model_string, usage = self._extract(resp)
             rec.update(request_number=request_number, model_string=model_string, input_tokens=usage.input_tokens,
-                       output_tokens=usage.output_tokens, latency_ms=latency, api_path=path)
+                       output_tokens=usage.output_tokens, latency_ms=latency, api_path=path,
+                       response_mode=self.output_modes.get(m.provider + "/" + m.model, "json_schema") if m.structured_output == "auto" else "json_schema")
 
             if not text.strip() or finish == "length":
                 rec["error"] = EmptyOrTruncated.code
@@ -417,6 +440,8 @@ class LLMClient:
             try:
                 data = _parse_json(text)
                 errs = schema_errors(data, schema)
+                if not errs and response_validator:
+                    errs = response_validator(data)
             except (json.JSONDecodeError, ValueError):
                 data, errs = None, ["$: not valid JSON"]
             if errs:
@@ -425,11 +450,15 @@ class LLMClient:
                 if not schema_retry:
                     schema_retry = True
                     continue
-                raise SchemaError("; ".join(errs[:5]))
+                exc = SchemaError("; ".join(errs[:5]))
+                exc.result = LLMResult(data=data, raw_text=text, model_string=model_string, usage=usage,
+                                       cache_key=key, api_path=path, response_mode=rec["response_mode"])
+                raise exc
 
             self._log(rec)
             return LLMResult(data=data, raw_text=text, model_string=model_string, usage=usage,
-                             cached=False, latency_ms=latency, cache_key=key, api_path=path)
+                             cached=False, latency_ms=latency, cache_key=key, api_path=path,
+                             response_mode=rec["response_mode"])
 
     def _send(self, m: ModelCfg, p: ProviderCfg, messages, schema, send_params, est_in, base_log):
         kwargs: dict[str, Any] = {
@@ -456,7 +485,10 @@ class LLMClient:
                 with self._budget_lock:
                     if self.calls_made >= self.cfg.max_calls_per_run:
                         raise BudgetExceeded(f"max_calls_per_run={self.cfg.max_calls_per_run} reached")
-                entry = limiter.acquire(est_in)
+                reservation = est_in + int(send_params.get("max_completion_tokens", 0)) if m.provider == "groq" else est_in
+                if m.provider == "groq" and p.tpm and reservation > p.tpm:
+                    raise LLMError("single request token reservation exceeds provider TPM")
+                entry = limiter.acquire(reservation)
                 with self._budget_lock:
                     if self.calls_made >= self.cfg.max_calls_per_run:
                         raise BudgetExceeded(f"max_calls_per_run={self.cfg.max_calls_per_run} reached")
@@ -465,12 +497,37 @@ class LLMClient:
                 self._log({**base_log, "event": "http_attempt_started", "api_path": path,
                            "request_number": number, "cached": False})
                 try:
-                    response = client.chat.completions.create(**kwargs)
+                    mode_key = m.provider + "/" + m.model
+                    mode = self.output_modes.get(mode_key, "json_schema") if m.structured_output == "auto" else "json_schema"
+                    payload = copy.deepcopy(kwargs)
+                    if mode == "json_object":
+                        payload["response_format"] = {"type": "json_object"}
+                        instruction = "Return JSON only. Your response must satisfy this JSON schema:\n" + _dumps(schema)
+                        if payload["messages"] and payload["messages"][0]["role"] == "system":
+                            content = payload["messages"][0]["content"]
+                            marker = "\n\nQuestions:\n"
+                            if marker in content:
+                                fixed, questions = content.split(marker, 1)
+                                payload["messages"][0]["content"] = fixed + "\n\n" + instruction + marker + questions
+                            else:
+                                payload["messages"][0]["content"] = content + "\n\n" + instruction
+                        else:
+                            payload["messages"].insert(0, {"role": "system", "content": instruction})
+                    response = client.chat.completions.create(**payload)
                 except Exception as exc:
                     status = getattr(exc, "status_code", None)
                     self._log({**base_log, "event": "http_attempt_failed", "api_path": path,
                                "request_number": number, "cached": False,
                                "error": f"HTTP_{status}" if status else type(exc).__name__})
+                    message = str(getattr(exc, "message", "")).lower()
+                    if (m.structured_output == "auto" and mode == "json_schema" and status in (400, 422)
+                            and any(term in message for term in ("json_schema", "response_format", "structured output"))
+                            and any(term in message for term in ("not support", "unsupported", "not available", "not permitted"))):
+                        self.output_modes[mode_key] = "json_object"
+                        self.mode_path.parent.mkdir(parents=True, exist_ok=True)
+                        self.mode_path.write_text(_dumps(self.output_modes), encoding="utf-8")
+                        self._log({**base_log, "event": "json_mode_fallback", "response_mode": "json_object"})
+                        return physical_request()
                     raise
                 usage = getattr(response, "usage", None)
                 actual = int(getattr(usage, "prompt_tokens", 0) or 0) + int(getattr(usage, "completion_tokens", 0) or 0)
@@ -561,7 +618,8 @@ class LLMClient:
         f = self.cache_dir / f"{key}.json"
         tmp = f.with_suffix(".tmp")
         tmp.write_text(_dumps({"data": res.data, "raw_text": res.raw_text, "model_string": res.model_string,
-                               "usage": res.usage.model_dump(), "api_path": res.api_path}), encoding="utf-8")
+                               "usage": res.usage.model_dump(), "api_path": res.api_path,
+                               "response_mode": res.response_mode}), encoding="utf-8")
         os.replace(tmp, f)
 
     def _log(self, rec: dict) -> None:

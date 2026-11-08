@@ -1,0 +1,45 @@
+version: 1
+weights: {H: 0.30, C: 0.20, A: 0.20, F: 0.20, policy_safety: 0.10}
+equal_weights: {H: 0.20, C: 0.20, A: 0.20, F: 0.20, policy_safety: 0.20}
+components:
+  H: mean(hook_rating)/4; multiply by 0.5 when majority hook_now is no
+  C: mean(cliff_rating)/4 * share(ends_unresolved=yes)
+  A: clip(0.5*share(standalone=yes) + 0.5*mean(fidelity) - 0.25*I(majority orphan_line=yes), 0, 1)
+  F: clip(0.5*(1-(ep-1)/(N-1)) + 0.5*(1-R) - B, 0, 1)
+  P: maximum weight among policy flag categories; zero when none
+  policy_safety: 1-P
+fidelity_values: {"yes": 1.0, partly: 0.5, "no": 0.0}
+policy_weights: {self_harm: 1.0, nonconsent_abuse: 1.0, sexual: 0.7, minors: 0.5, violence: 0.3, profanity: 0.3, shock_fear: 0.2}
+spoiler_risk:
+  ending_or_low_conf_resolution: 1.0
+  reveal_only: 0.5
+  none: 0.0
+  precedence: majority spoils_ending=yes or contains_low_conf_resolution; then contains_reveal; then none
+fit:
+  episode_count: 50
+  penalty_scale: 1.0
+  penalty_definition: B=clip(sum(applicable builder penalties)/penalty_scale,0,1)
+  penalties: {possible_recap: 0.5, reaction_cut: 0.25, montage: 0.25, speakers_4: 0.25}
+  triggers: {possible_recap: flag, reaction_cut: flag, montage: montage, speakers_4: flag}
+aggregation:
+  failed_runs: exclude from all aggregates
+  majority: strictly more than half of successful runs; tie is unmeasured
+  repeat_item_flip: number of disagreeing yes/no questions divided by 5
+  per_question_flip: share of measured repeated items with disagreement on that question
+  minimum_successful_repeats_for_flip: 2
+  single_run_flip: null
+sensitivity:
+  S_no_funnel: same official weights with F replaced by F_no_funnel
+  F_no_funnel: clip(1-R-B,0,1)
+  official_ranking_changed: false
+lanes:
+  policy_threshold: 0.7
+  flip_threshold: 0.4
+  reveal_and_spoils_ending: true
+  missing_evidence: needs_human with null scores; never selected for launch
+launch:
+  size: 5
+  control: highest official S without needs_human
+  challenger: next highest official S; unique hook family including control; no shared line IDs
+  fill: relax family only; preserve no shared line IDs and human-review exclusion; record shortfall
+ties: promo_id ascending for display; Kendall tau-b uses score ties

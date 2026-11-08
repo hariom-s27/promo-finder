@@ -137,6 +137,8 @@ def include_reactions(episode: Episode, spans, index, cfg: Config):
     positions = {line.id: i for i, line in enumerate(episode.lines)}
     cut, included = False, 0
     for number, (first, last) in enumerate(list(spans)):
+        if number == len(spans) - 1 and not cfg.builder.j5_at_final_end:
+            continue
         pos = positions[last] + 1
         if pos >= len(episode.lines) or episode.lines[pos].kind not in ("action", "camera"):
             continue
@@ -203,9 +205,14 @@ def build_episode(episode: Episode, moment_data: dict, reveal_data: dict, intens
     scanner.flags = policy
     smooth = {row["line_id"]: row["smooth"] for row in intensity}
     reveal_ids = {mark["line_id"] for mark in reveal_data["marks"] if mark["type"] == "reveal"}
-    resolution_ids = {mark["line_id"] for mark in reveal_data["marks"] if mark["type"] == "resolution"}
+    resolutions = {confidence: {m["line_id"] for m in reveal_data["marks"]
+                   if m["type"] == "resolution" and m["confidence"] == confidence}
+                   for confidence in ("low", "medium", "high")}
+    resolution_ids = set().union(*(resolutions[c] for c in cfg.spoiler.resolution_block_confidence))
     summary = {"generated": 0, "dropped": {rule: 0 for rule in RULES}, "kept": 0,
                "checker_errors": {}, "reactions_included": 0, "reaction_cut_candidates": 0,
+               "resolution_intersections_by_confidence": {c: 0 for c in resolutions},
+               "resolution_drops_by_confidence": {c: 0 for c in resolutions},
                "recap": {"method": recap_method, "recap_lines": len(recap_ids),
                          "flagged_generated": {"similarity": 0, "fallback": 0},
                          "flagged_kept": {"similarity": 0, "fallback": 0}}}
@@ -244,17 +251,27 @@ def build_episode(episode: Episode, moment_data: dict, reveal_data: dict, intens
             if len(speakers) == 2 and not speakers[0] & speakers[1]:
                 summary["dropped"]["J4"] += 1
                 continue
-            if len(set().union(*speakers)) > cfg.builder.max_speakers:
+            speaker_count = len(set().union(*speakers))
+            hard = cfg.builder.max_speakers + 1 if cfg.builder.max_speakers is not None else cfg.builder.speakers_hard
+            if speaker_count >= hard:
                 summary["dropped"]["speakers"] += 1
                 continue
             ids = [key for seg in checked.segments for key in seg.line_ids]
             recap = ids[0] in recap_ids
             if recap:
                 summary["recap"]["flagged_generated"][recap_method] += 1
-            flags = {"possible_recap": recap, "reaction_cut": reaction_cut, "contains_reveal": bool(set(ids) & reveal_ids)}
+            flags = {"possible_recap": recap, "reaction_cut": reaction_cut,
+                     "contains_reveal": bool(set(ids) & reveal_ids),
+                     "contains_low_conf_resolution": bool(set(ids) & resolutions["low"]),
+                     "speakers_4": speaker_count == cfg.builder.speakers_soft}
+            for confidence, marked in resolutions.items():
+                summary["resolution_intersections_by_confidence"][confidence] += bool(set(ids) & marked)
+            blocking = [c for c in ("high", "medium", "low") if c in cfg.spoiler.resolution_block_confidence and set(ids) & resolutions[c]]
+            if blocking:
+                summary["resolution_drops_by_confidence"][blocking[0]] += 1
             montage = len(spans) == 2
             score = int(hook["strength"]) + int(cliff["strength"]) + sum(smooth[key] for key in ids) / len(ids)
-            score -= sum(getattr(cfg.builder.penalties, flag) for flag in ("possible_recap", "reaction_cut") if flags[flag])
+            score -= sum(getattr(cfg.builder.penalties, flag) for flag in ("possible_recap", "reaction_cut", "speakers_4") if flags[flag])
             score -= cfg.builder.penalties.montage if montage else 0
             survivors.append({"episode": episode.ep, "segments": [
                 {"episode": seg.ep, "start_ms": seg.start_ms, "end_ms": seg.end_ms,
@@ -291,7 +308,7 @@ def build_episode(episode: Episode, moment_data: dict, reveal_data: dict, intens
         if not check_promo(spans, index, _limits(cfg)).ok:
             raise UnderstandingError("final checker invariant failed")
         summary["recap"]["flagged_kept"][recap_method] += promo["flags"]["possible_recap"]
-        result.append({"promo_id": f"P03-E{episode.ep:02d}-{number:03d}",
+        result.append({"promo_id": f"P05-E{episode.ep:02d}-{number:03d}",
                        **{key: value for key, value in promo.items() if not key.startswith("_")}})
     if summary["generated"] != sum(summary["dropped"].values()) + summary["kept"]:
         raise UnderstandingError("builder accounting invariant failed")

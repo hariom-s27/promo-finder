@@ -2,33 +2,46 @@
 # data_dir can be overridden with env var KUKU_DATA_DIR.
 data_dir: "D:/sem_iitk/sem9/kuku/I Married a Broken Soldier. He was a Duke-scripts (2) (1)"
 secrets_file: ".env"        # inside promo-finder; env var KUKU_SECRETS_FILE overrides
-max_calls_per_run: 50
+max_calls_per_run: 168
 promo: { min_s: 20, max_s: 60, max_segments: 3 }
 active: { picker: azure_mini, judge: groq_qwen }        # switch model = edit one line
 understanding: { character_chunk_episodes: 4 }
 purposes:
   reveals: { reasoning_effort: low }
   moments: { reasoning_effort: low }
+  answer_key: { reasoning_effort: low, max_completion_tokens: 6000 }
+  cold_judge: { max_completion_tokens: 800 }
+  fidelity: { max_completion_tokens: 256 }
+  ping: { max_completion_tokens: 64 }
+judge:
+  repeat_top_per_episode: 2
+  repeat_runs: 3
+  temperature: 0.7
+  shuffle_seed: 52
+  fidelity_dependency_allowance_tokens: 512
 rate_limit:
   max_concurrent: 1
   min_interval_s: 1.5
   honour_retry_after: true
   max_retry_after_s: 60
 spoiler:
-  reveal_mode: block
+  reveal_mode: flag
   late_series_start: 46
+  resolution_block_confidence: [medium, high]
 builder:
   max_per_episode: 8
   max_segments: 2
   montage_first_min_s: 8
   montage_first_max_s: 20
-  max_speakers: 3
+  speakers_soft: 4
+  speakers_hard: 5
+  j5_at_final_end: false
   dedupe_tiou: 0.7
   recap_scan_lines: 12
   recap_similarity: 0.85
   recap_prev_tail_lines: 15
   recap_fallback_s: 5
-  penalties: { possible_recap: 0.5, reaction_cut: 0.25, montage: 0.25 }
+  penalties: { possible_recap: 0.5, reaction_cut: 0.25, montage: 0.25, speakers_4: 0.25 }
 intensity:
   weights: { exclamations: 1.0, questions: 0.5, all_caps_words: 0.5,
              strong_emotion: 2.0, sfx: 1.5, action_violence_shock: 2.0,
@@ -43,6 +56,7 @@ models:
   groq_oss:     { provider: groq,  model: "openai/gpt-oss-120b", family: openai,
                   params: { reasoning_effort: low, include_reasoning: false, max_completion_tokens: 4000 } }
   groq_qwen:    { provider: groq,  model: "qwen/qwen3.8-27b",    family: alibaba,
+                  structured_output: auto,
                   params: { reasoning_effort: none, max_completion_tokens: 2000 } }
   # Azure "model" values are deployment names: mini = gpt-5-mini 2025-08-07, strong = gpt-5.4 2026-03-05
   azure_mini:   { provider: azure, model: "mini",   family: openai,
@@ -50,6 +64,8 @@ models:
   azure_strong: { provider: azure, model: "strong", family: openai,
                   params: { reasoning_effort: low, max_completion_tokens: 6000 } }
   featherless_judge: { provider: featherless, model: "TBD", family: "TBD", params: {} }   # chosen after P01
+  featherless_llama: { provider: featherless, model: "meta-llama/Llama-3.3-70B-Instruct", family: meta,
+                      structured_output: auto, params: { max_completion_tokens: 2000 } }
 providers:
   groq:        { base_url: "https://api.groq.com/openai/v1", key_env: GROQ_API_KEY, rpm: 30, tpm: 8000 }
   azure:       { endpoint_env: AZURE_OPENAI_ENDPOINT, key_env: AZURE_OPENAI_API_KEY,

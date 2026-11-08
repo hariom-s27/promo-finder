@@ -156,6 +156,8 @@ def _scrub(cfg: Config, text: str) -> str:
 def cmd_ping(cfg: Config, args) -> int:
     from .llm import LLMClient, LLMError, estimate_tokens, _prompt_text, to_strict
 
+    if getattr(args, "models", None):
+        return cmd_targeted_ping(cfg, args)
     load_secrets(cfg)
     client = LLMClient(cfg, dry_run=args.dry_run)
     results = []
@@ -223,6 +225,42 @@ def cmd_ping(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_targeted_ping(cfg: Config, args) -> int:
+    from .judging import call_accounting, purpose_options
+    from .llm import LLMClient, LLMError
+    from .understanding_common import metadata, write_json
+
+    keys = args.models.split(",")
+    if keys != ["groq_qwen", "featherless_llama"]:
+        print("ping: invalid target selection", file=sys.stderr)
+        return 1
+    if args.dry_run:
+        print(json.dumps({"planned_ping_models": keys, "calls": 2}))
+        return 0
+    load_secrets(cfg)
+    client = LLMClient(cfg, cache_dir=cfg.root / "outputs/judge/.llm_cache")
+    rows = []
+    status = 0
+    for key in keys:
+        row = {"model_key": key}
+        try:
+            result = client.call(key, [{"role": "user", "content": "Return only JSON with ok set to true."}],
+                PING_SCHEMA, purpose=f"p05.ping.{key}", no_cache=args.no_cache,
+                response_validator=lambda data: [] if data["ok"] is True else ["$.ok: expected true"],
+                **purpose_options(cfg, "ping"))
+            row.update(status="ok", **metadata(result, response_mode=result.response_mode))
+        except LLMError as exc:
+            row.update(status="failed", error_code=exc.code)
+            status = 1
+        rows.append(row)
+        write_json(cfg.root / "outputs/judge/pings.json", {"models": rows,
+            "failed_runs": sum(row["status"] == "failed" for row in rows), "llm": call_accounting(client.records, cfg)})
+        print(json.dumps(row, sort_keys=True))
+        if status and (args.fail_fast or key == "groq_qwen"):
+            break
+    return status
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="promo_finder")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -231,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
     q = sub.add_parser("ping", help="one tiny call per configured model")
     q.add_argument("--no-cache", action="store_true", help="bypass the LLM cache")
     q.add_argument("--dry-run", action="store_true", help="estimate tokens, make no calls")
+    q.add_argument("--models", help="targeted P05 pings: groq_qwen,featherless_llama")
+    q.add_argument("--fail-fast", action="store_true", help="stop after a failed targeted ping")
     from .labelling import HELD_OUT_SPEC
 
     ll = sub.add_parser("list-lines", help="write outputs/labelling/E##_lines.md (labelling aid)")
@@ -265,6 +305,16 @@ def main(argv: list[str] | None = None) -> int:
     build = sub.add_parser("build", help="build validated promos without AI calls")
     build.add_argument("--eps", default=DEV_SPEC)
     build.add_argument("--allow-held-out", action="store_true", help="explicitly override the held-out seal")
+    from .judging import cmd_judge
+    from .ranking import cmd_rank
+    judge = sub.add_parser("judge", help="answer keys, cold judging and DEV reference check")
+    judge.add_argument("--eps", default=DEV_SPEC)
+    judge.add_argument("--dry-run", action="store_true", help="count-only preflight without secrets or requests")
+    judge.add_argument("--no-cache", action="store_true")
+    judge.add_argument("--allow-held-out", action="store_true")
+    rank = sub.add_parser("rank", help="rank previously judged candidates without AI calls")
+    rank.add_argument("--eps", default=DEV_SPEC)
+    rank.add_argument("--allow-held-out", action="store_true")
     args = ap.parse_args(argv)
     try:
         cfg = load_config()
@@ -273,5 +323,5 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     cmds = {"parse": cmd_parse, "ping": cmd_ping, "list-lines": cmd_list_lines, "check-gold": cmd_check_gold,
             "make-workbook": cmd_make_workbook, "export-gold": cmd_export_gold, "understand": cmd_understand,
-            "find": cmd_find, "build": cmd_build}
+            "find": cmd_find, "build": cmd_build, "judge": cmd_judge, "rank": cmd_rank}
     return cmds[args.cmd](cfg, args)

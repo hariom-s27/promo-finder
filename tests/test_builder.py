@@ -12,7 +12,13 @@ from promo_finder.config import load_config
 
 @pytest.fixture
 def bcfg(write_config):
-    return load_config(write_config())
+    cfg = load_config(write_config())
+    # Existing cases explicitly exercise the P03 switches; P05 defaults are tested below.
+    cfg.spoiler.reveal_mode = "block"
+    cfg.spoiler.resolution_block_confidence = ["low", "medium", "high"]
+    cfg.builder.max_speakers = 3
+    cfg.builder.j5_at_final_end = True
+    return cfg
 
 
 def bundle(episode_factory, ep=5, n=20, step=5000, hook=0, cliff=3):

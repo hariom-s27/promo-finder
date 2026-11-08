@@ -72,7 +72,8 @@ class PricingCfg(BaseModel):
 
 
 class PurposeCfg(BaseModel):
-    reasoning_effort: str
+    reasoning_effort: Optional[str] = None
+    max_completion_tokens: Optional[int] = Field(default=None, gt=0)
 
 
 class RateLimitCfg(BaseModel):
@@ -84,14 +85,16 @@ class RateLimitCfg(BaseModel):
 
 
 class SpoilerCfg(BaseModel):
-    reveal_mode: Literal["block", "flag"] = "block"
+    reveal_mode: Literal["block", "flag"] = "flag"
     late_series_start: int = Field(default=46, ge=1)
+    resolution_block_confidence: list[Literal["low", "medium", "high"]] = Field(default_factory=lambda: ["medium", "high"])
 
 
 class PenaltiesCfg(BaseModel):
     possible_recap: float = Field(default=0.5, ge=0, allow_inf_nan=False)
     reaction_cut: float = Field(default=0.25, ge=0, allow_inf_nan=False)
     montage: float = Field(default=0.25, ge=0, allow_inf_nan=False)
+    speakers_4: float = Field(default=0.25, ge=0, allow_inf_nan=False)
 
 
 class BuilderCfg(BaseModel):
@@ -99,7 +102,10 @@ class BuilderCfg(BaseModel):
     max_segments: int = Field(default=2, ge=1, le=2)
     montage_first_min_s: float = Field(default=8, gt=0, allow_inf_nan=False)
     montage_first_max_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    max_speakers: int = Field(default=3, ge=1)
+    max_speakers: Optional[int] = Field(default=None, ge=1)  # legacy config compatibility
+    speakers_soft: int = Field(default=4, ge=1)
+    speakers_hard: int = Field(default=5, ge=1)
+    j5_at_final_end: bool = False
     dedupe_tiou: float = Field(default=0.7, ge=0, le=1, allow_inf_nan=False)
     recap_scan_lines: int = Field(default=12, ge=1)
     recap_similarity: float = Field(default=0.85, ge=0, le=1, allow_inf_nan=False)
@@ -111,6 +117,8 @@ class BuilderCfg(BaseModel):
     def _bounds(self) -> "BuilderCfg":
         if self.montage_first_min_s > self.montage_first_max_s:
             raise ValueError("montage first-piece bounds are inconsistent")
+        if self.speakers_soft > self.speakers_hard:
+            raise ValueError("speaker thresholds are inconsistent")
         return self
 
 
@@ -118,6 +126,7 @@ class ModelCfg(BaseModel):
     provider: str
     model: str
     family: str
+    structured_output: Literal["strict", "auto"] = "strict"
     params: dict = Field(default_factory=dict)
 
     @property
@@ -144,6 +153,20 @@ class ProviderCfg(BaseModel):
         return [n for n in (self.key_env, self.endpoint_env) if n]
 
 
+class JudgeCfg(BaseModel):
+    repeat_top_per_episode: int = Field(default=2, ge=0)
+    repeat_runs: int = Field(default=3, ge=3)
+    temperature: float = Field(default=0.7, ge=0, le=2, allow_inf_nan=False)
+    shuffle_seed: int = 52
+    fidelity_dependency_allowance_tokens: int = Field(default=512, ge=0)
+
+    @model_validator(mode="after")
+    def _odd_runs(self):
+        if self.repeat_runs % 2 == 0:
+            raise ValueError("repeat_runs must be odd")
+        return self
+
+
 class Config(BaseModel):
     data_dir: Path
     secrets_file: str = ".env"
@@ -159,6 +182,7 @@ class Config(BaseModel):
     rate_limit: RateLimitCfg = Field(default_factory=RateLimitCfg)
     spoiler: SpoilerCfg = Field(default_factory=SpoilerCfg)
     builder: BuilderCfg = Field(default_factory=BuilderCfg)
+    judge: JudgeCfg = Field(default_factory=JudgeCfg)
 
     _root: Path = PrivateAttr(default=PROJECT_ROOT)
 
