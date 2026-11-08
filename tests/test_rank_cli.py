@@ -28,18 +28,18 @@ def test_end_to_end_rank_and_sensitivity_artifacts(jcfg, episode_factory):
     shutil.copy2(Path(__file__).parents[1]/"config/score_formula.yaml", jcfg.root / "config/score_formula.yaml")
     summary = ranking.run(jcfg, [ep])
     assert summary["items"] == 1 and summary["lane_counts"]["launch_batch"] == 1
-    data = json.loads((jcfg.root / "outputs/ranked/promos_dev.json").read_text())
+    data = json.loads((jcfg.root / "outputs/runs/dev/ranked/promos_dev.json").read_text())
     row = data["promos"][0]
     assert row["batch_role"] == "control" and row["S_no_funnel"] is not None
     assert row["formula_sha256"] == summary["formula_sha256"]
-    assert (jcfg.root / "outputs/ranked/promos_dev.md").is_file()
+    assert (jcfg.root / "outputs/runs/dev/ranked/promos_dev.md").is_file()
 
 
 def test_stale_candidate_is_refused(jcfg, episode_factory):
     ep, _ = setup(jcfg, episode_factory)
     judging.run(jcfg, [ep], client(jcfg, Provider()))
     shutil.copy2(Path(__file__).parents[1]/"config/score_formula.yaml", jcfg.root / "config/score_formula.yaml")
-    path = jcfg.root / "outputs/promos/candidates_E05.json"
+    path = jcfg.root / "outputs/runs/dev/promos/candidates_E05.json"
     data = json.loads(path.read_text())
     data["candidates"][0]["pre_score"] += 1
     path.write_text(json.dumps(data))

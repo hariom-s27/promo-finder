@@ -4,7 +4,7 @@ data_dir: "D:/sem_iitk/sem9/kuku/I Married a Broken Soldier. He was a Duke-scrip
 secrets_file: ".env"        # inside promo-finder; env var KUKU_SECRETS_FILE overrides
 max_calls_per_run: 168
 promo: { min_s: 20, max_s: 60, max_segments: 3 }
-active: { picker: azure_mini, judge: groq_qwen }        # switch model = edit one line
+active: { picker: azure_mini, judge: azure_llama, free_path_judge: groq_qwen } # D74; switch only by explicit decision
 understanding: { character_chunk_episodes: 4 }
 purposes:
   reveals: { reasoning_effort: low }
@@ -13,13 +13,23 @@ purposes:
   cold_judge: { max_completion_tokens: 800 }
   fidelity: { max_completion_tokens: 256 }
   ping: { max_completion_tokens: 64 }
+  baseline: { reasoning_effort: low, max_completion_tokens: 6000 }
 judge:
   repeat_top_per_episode: 2
   repeat_runs: 3
   temperature: 0.7
+  retry_temperature: 0.3
+  full_run:
+    top_per_episode: 4
+    repeat_top_per_episode: 1
+    repeat_runs: 3
+    fidelity_runs: 1
   shuffle_seed: 52
   fidelity_dependency_allowance_tokens: 512
 rate_limit:
+  groq: { daily_safety_factor: 1.2 }
+  azure_foundry:
+    azure_llama: { tpm: 20000, rpm: 20 }
   max_concurrent: 1
   min_interval_s: 1.5
   honour_retry_after: true
@@ -52,12 +62,16 @@ intensity:
 pricing:
   azure_mini: { input_per_million_usd: 0.25, output_per_million_usd: 2.00,
                 source: RESEARCH, description: "list price, Global Standard" }
+  azure_llama: { input_per_million_usd: 0.71, output_per_million_usd: 0.71,
+                 source: RESEARCH, description: "list price (RESEARCH), koreacentral meter not confirmed" }
 models:
   groq_oss:     { provider: groq,  model: "openai/gpt-oss-120b", family: openai,
                   params: { reasoning_effort: low, include_reasoning: false, max_completion_tokens: 4000 } }
   groq_qwen:    { provider: groq,  model: "qwen/qwen3.8-27b",    family: alibaba,
-                  structured_output: auto,
+                  structured_output: json_object,
                   params: { reasoning_effort: none, max_completion_tokens: 2000 } }
+  azure_llama:  { provider: azure_foundry, model: "llama70", family: meta,
+                  structured_output: json_object, params: { max_completion_tokens: 2000 } }
   # Azure "model" values are deployment names: mini = gpt-5-mini 2025-08-07, strong = gpt-5.4 2026-03-05
   azure_mini:   { provider: azure, model: "mini",   family: openai,
                   params: { reasoning_effort: minimal, max_completion_tokens: 6000 } }
@@ -70,4 +84,5 @@ providers:
   groq:        { base_url: "https://api.groq.com/openai/v1", key_env: GROQ_API_KEY, rpm: 30, tpm: 8000 }
   azure:       { endpoint_env: AZURE_OPENAI_ENDPOINT, key_env: AZURE_OPENAI_API_KEY,
                  mode: v1, fallback_api_version: "2025-04-01-preview" }
+  azure_foundry: { endpoint_env: AZURE_FOUNDRY_ENDPOINT, key_env: AZURE_FOUNDRY_API_KEY, mode: v1 }
   featherless: { base_url: "https://api.featherless.ai/v1", key_env: FEATHERLESS_API_KEY, rpm: 10 }

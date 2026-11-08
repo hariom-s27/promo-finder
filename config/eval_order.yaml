@@ -1,0 +1,41 @@
+version: 1
+match_rule: "eval/match_rule.md §3"
+
+primary:
+  groups:
+    - name: scored
+      score: S
+      direction: descending
+      tie_break: promo_id_ascending
+    - name: unscored
+      score: pre_score
+      direction: descending
+      tie_break: promo_id_ascending
+  concatenate: [scored, unscored]
+  needs_human: retain_score_rank
+  failed_or_missing_judge_evidence: unscored
+
+sensitivity:
+  name: S_no_funnel
+  groups:
+    - name: scored
+      score: S_no_funnel
+      direction: descending
+      tie_break: promo_id_ascending
+    - name: unscored
+      score: pre_score
+      direction: descending
+      tie_break: promo_id_ascending
+  concatenate: [scored, unscored]
+  needs_human: retain_score_rank
+
+judge_selection:
+  scope: full_run
+  score: pre_score
+  direction: descending
+  tie_break: promo_id_ascending
+  top_per_episode: 4
+  repeat_top_per_episode: 1
+  repeat_runs: 3
+  fidelity_runs: 1
+  include_dev_references: false

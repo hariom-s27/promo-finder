@@ -13,7 +13,7 @@ from .understanding_common import DATA_RULE, array, enum, obj, words
 QUESTIONS = {
     "hook_now": "something is already happening in the first 3 seconds.",
     "ends_unresolved": "the clip ends before the conflict is answered.",
-    "standalone": "a stranger can tell who is in conflict and what is at stake.",
+    "standalone": 'someone who has never seen this show can follow the basic situation from this clip alone — who is in conflict and roughly what is at stake. Backstory and names are not required; answer "no" only if the clip is confusing without earlier episodes.',
     "orphan_line": "some line only makes sense with missing context, such as a reply without its question.",
     "spoils_ending": "the clip shows how the conflict ends.",
 }

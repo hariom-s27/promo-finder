@@ -14,6 +14,7 @@ from .checker import build_index
 from .finding import check_selection, read_json
 from .judging import checked_item
 from .labelling import parse_eps
+from .labelling import HELD_OUT
 from .understanding import load_requested
 from .understanding_common import UnderstandingError, write_json
 
@@ -28,6 +29,9 @@ def clip(value):
 def load_formula(cfg):
     path = cfg.root / "config/score_formula.yaml"
     raw = path.read_bytes()
+    from .run_context import SCORE_SHA256
+    if hashlib.sha256(raw).hexdigest() != SCORE_SHA256:
+        raise UnderstandingError("score formula hash mismatch")
     formula = yaml.safe_load(raw)
     expected = {"H": .3, "C": .2, "A": .2, "F": .2, "policy_safety": .1}
     if formula["weights"] != expected or formula["equal_weights"] != dict.fromkeys(expected, .2):
@@ -123,6 +127,9 @@ def launch_batch(rows, size=5):
 
 
 def markdown(rows, launch, episodes):
+    rows = [r for r in rows if all(s["episode"] not in HELD_OUT for s in r["segments"])]
+    episodes = [e for e in episodes if e.ep not in HELD_OUT]
+    launch = {**launch, "promo_ids": [key for key in launch["promo_ids"] if key in {r["promo_id"] for r in rows}]}
     index = build_index(episodes)
     by_id = {row["promo_id"]: row for row in rows}
     order = [by_id[key] for key in launch["promo_ids"]] + [r for r in rows if r["promo_id"] not in launch["promo_ids"]]
@@ -137,34 +144,67 @@ def markdown(rows, launch, episodes):
     return "\n".join(lines)
 
 
-def run(cfg, episodes):
-    check_selection([e.ep for e in episodes])
+def evaluation_order(rows, score="S"):
+    return sorted(rows, key=lambda r: (r.get(score) is None,
+                  -r[score] if r.get(score) is not None else -r["pre_score"], r["promo_id"]))
+
+
+def validate_eval_order(cfg):
+    path = cfg.root / "config/eval_order.yaml"
+    if not path.is_file():
+        return
+    order = yaml.safe_load(path.read_text(encoding="utf-8"))
+    expected_groups = lambda score: [dict(name="scored", score=score, direction="descending", tie_break="promo_id_ascending"),
+                                    dict(name="unscored", score="pre_score", direction="descending", tie_break="promo_id_ascending")]
+    for name, score in (("primary", "S"), ("sensitivity", "S_no_funnel")):
+        section = order[name]
+        if (section["groups"] != expected_groups(score) or section["concatenate"] != ["scored", "unscored"] or
+                section["needs_human"] != "retain_score_rank"):
+            raise UnderstandingError("unexpected evaluation order")
+    selection = order["judge_selection"]
+    expected = {**cfg.judge.full_run.model_dump(), "scope": "full_run", "score": "pre_score", "direction": "descending",
+                "tie_break": "promo_id_ascending", "include_dev_references": False}
+    if selection != expected:
+        raise UnderstandingError("judge selection differs from frozen config")
+
+
+def run(cfg, episodes, *, allow_held_out=False):
+    check_selection([e.ep for e in episodes], allow_held_out)
+    validate_eval_order(cfg)
     formula, sha = load_formula(cfg)
     rows = []
     for episode in episodes:
-        current = read_json(cfg.root / f"outputs/promos/candidates_E{episode.ep:02d}.json")["candidates"]
-        judged_data = read_json(cfg.root / f"outputs/judge/judge_E{episode.ep:02d}.json")
+        current = read_json(cfg.output_root / f"promos/candidates_E{episode.ep:02d}.json")["candidates"]
+        judged_data = read_json(cfg.output_root / f"judge/judge_E{episode.ep:02d}.json")
+        if cfg.models[cfg.active.judge].provider == "azure_foundry" and judged_data.get("model_key") != cfg.active.judge:
+            raise UnderstandingError("official judge evidence missing; refusing stale judge arm")
         if judged_data.get("episode") != episode.ep:
             raise UnderstandingError("judge episode mismatch")
         judged = {item["promo_id"]: item for item in judged_data["items"] if not item["reference"]}
-        if set(judged) != {p["promo_id"] for p in current}:
+        if judged_data.get("full_run_selection"):
+            expected = {p["promo_id"] for p in sorted(current, key=lambda p: (-p["pre_score"], p["promo_id"]))[:cfg.judge.full_run.top_per_episode]}
+        else:
+            expected = {p["promo_id"] for p in current}
+        if set(judged) != expected:
             raise UnderstandingError("judge coverage mismatch")
         for item in current:
             promo = checked_item(item, episode, cfg)
-            result = judged[promo["promo_id"]]
-            if result["candidate"] != promo:
+            result = judged.get(promo["promo_id"])
+            if result is not None and result["candidate"] != promo:
                 raise UnderstandingError("stale judge candidate")
-            values = components(promo, result, formula)
+            values = components(promo, result, formula) if result is not None else None
             reasons = review_reasons(promo, result, values, formula)
             row = {"promo_id": promo["promo_id"], **(values or dict.fromkeys(("H", "C", "A", "F", "P", "R", "B", "F_no_funnel", "S", "S_equal", "S_no_funnel"))),
                    "segments": promo["segments"], "line_ids": promo["line_ids"], "hook_type": promo["hook"]["type"],
                    "cliff_type": promo["cliff"]["type"], "flags": promo["flags"], "policy": promo["policy"],
-                   "judge": result, "flip_rate": result["aggregate"]["flip_rate"],
-                   "per_question_disagreement": result["aggregate"]["per_question_disagreement"],
+                   "judge": result, "pre_score": promo["pre_score"],
+                   "judge_status": "not_selected" if result is None else "scored" if values is not None else "failed_evidence",
+                   "flip_rate": result["aggregate"]["flip_rate"] if result else None,
+                   "per_question_disagreement": result["aggregate"]["per_question_disagreement"] if result else None,
                    "needs_human_reasons": reasons, "formula_sha256": sha,
                    "model_provenance": promo["provenance"]}
             rows.append(row)
-    rows.sort(key=lambda r: (r["S"] is None, -(r["S"] or 0), r["promo_id"]))
+    rows = evaluation_order(rows)
     launch = launch_batch(rows, formula["launch"]["size"])
     for rank, row in enumerate(rows, 1):
         row["rank"] = rank
@@ -173,12 +213,21 @@ def run(cfg, episodes):
     scored = [row for row in rows if row["S"] is not None]
     scores = [r["S"] for r in scored]
     summary = {"items": len(rows), "scored": len(scored), "formula_sha256": sha, "launch_batch": launch,
+               "judge_model_key": cfg.active.judge,
+               "returned_model_strings": sorted({run.get("metadata", {}).get("model_string") for row in rows
+                                                  for run in (row.get("judge") or {}).get("runs", [])
+                                                  if run.get("metadata", {}).get("model_string")}),
                "lane_counts": {lane: sum(r["lane"] == lane for r in rows) for lane in ("needs_human", "launch_batch", "reserve")},
                "score_distribution": {"min": min(scores) if scores else None, "median": statistics.median(scores) if scores else None, "max": max(scores) if scores else None},
                "kendall_equal": kendall_tau_b(scores, [r["S_equal"] for r in scored]),
-               "kendall_no_funnel": kendall_tau_b(scores, [r["S_no_funnel"] for r in scored])}
-    write_json(cfg.root / "outputs/ranked/promos_dev.json", {"summary": summary, "promos": rows})
-    destination = cfg.root / "outputs/ranked/promos_dev.md"
+               "kendall_no_funnel": kendall_tau_b(scores, [r["S_no_funnel"] for r in scored]),
+               "judge_selected": sum(r["judge"] is not None for r in rows),
+               "coverage_all_candidates": len(scored) / len(rows) if rows else None,
+               "coverage_selected": len(scored) / sum(r["judge"] is not None for r in rows) if any(r["judge"] is not None for r in rows) else None}
+    write_json(cfg.output_root / "ranked/promos_dev.json", {"summary": summary, "promos": rows,
+               "evaluation_order": [r["promo_id"] for r in rows],
+               "sensitivity_order_S_no_funnel": [r["promo_id"] for r in evaluation_order(rows, "S_no_funnel")]})
+    destination = cfg.output_root / "ranked/promos_dev.md"
     temporary = destination.with_suffix(".md.tmp")
     temporary.write_text(markdown(rows, launch, episodes), encoding="utf-8")
     temporary.replace(destination)
@@ -190,7 +239,7 @@ def cmd_rank(cfg, args):
         eps = parse_eps(args.eps)
         check_selection(eps, args.allow_held_out)
         episodes = load_requested(cfg, eps, args.allow_held_out)
-        print(json.dumps(run(cfg, episodes), sort_keys=True))
+        print(json.dumps(run(cfg, episodes, allow_held_out=args.allow_held_out), sort_keys=True))
         return 0
     except Exception as exc:
         print("rank: failed; error=" + getattr(exc, "code", type(exc).__name__), file=sys.stderr)

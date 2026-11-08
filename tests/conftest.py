@@ -76,3 +76,21 @@ def write_config(tmp_path):
         return p
 
     return _write
+
+
+@pytest.fixture
+def p07_cfg(write_config):
+    """Frozen public configs plus entirely fake providers; no real credentials."""
+    from shutil import copy2
+    from promo_finder.config import PricingCfg, PurposeCfg, load_config
+    cfg = load_config(write_config(max_calls=200))
+    cfg.models["azure_mini"] = cfg.models[cfg.active.picker].model_copy()
+    cfg.active.picker = "azure_mini"
+    cfg.pricing["azure_mini"] = PricingCfg(input_per_million_usd=.25, output_per_million_usd=2)
+    cfg.purposes = {"baseline": PurposeCfg(reasoning_effort="low", max_completion_tokens=6000),
+                    "answer_key": PurposeCfg(reasoning_effort="low", max_completion_tokens=6000),
+                    "cold_judge": PurposeCfg(max_completion_tokens=800), "fidelity": PurposeCfg(max_completion_tokens=256)}
+    (cfg.root / "config").mkdir(exist_ok=True)
+    for name in ("score_formula.yaml", "eval_order.yaml", "baseline.yaml"):
+        copy2(ROOT / "config" / name, cfg.root / "config" / name)
+    return cfg

@@ -15,9 +15,9 @@ from test_builder import bundle
 def save(cfg, data):
     episode, moments, reveals, intensity, policy = data
     tag = f"E{episode.ep:02d}"
-    write_json(cfg.root / f"outputs/moments/moments_{tag}.json", moments)
+    write_json(cfg.root / f"outputs/runs/dev/moments/moments_{tag}.json", moments)
     for name, value in (("reveals", reveals), ("intensity", intensity), ("policy", policy)):
-        write_json(cfg.root / f"outputs/understanding/{name}_{tag}.json", value)
+        write_json(cfg.root / f"outputs/runs/dev/understanding/{name}_{tag}.json", value)
 
 
 def test_build_cli_no_secrets_no_calls_and_count_only_console(write_config, episode_factory, monkeypatch, capsys):
@@ -33,7 +33,7 @@ def test_build_cli_no_secrets_no_calls_and_count_only_console(write_config, epis
     assert cli.main(["build"]) == 0
     printed = capsys.readouterr().out
     assert json.loads(printed)["kept"] == 1 and "invented" not in printed and "TEST SPEAKER" not in printed
-    out = cfg.root / "outputs/promos"
+    out = cfg.root / "outputs/runs/dev/promos"
     result = json.loads((out / "candidates_E05.json").read_text(encoding="utf-8"))
     promo = result["candidates"][0]
     assert {"promo_id", "episode", "segments", "line_ids", "duration_s", "hook", "cliff", "pre_score", "flags",
@@ -79,16 +79,16 @@ def test_invalid_artifacts_fail_before_outputs(write_config, episode_factory, da
     save(cfg, data)
     with pytest.raises(UnderstandingError):
         builder.run(cfg, [data[0]])
-    assert not (cfg.root / "outputs/promos").exists()
+    assert not (cfg.root / "outputs/runs/dev/promos").exists()
 
 
 def test_missing_input_does_not_replace_existing_output(write_config, episode_factory):
     cfg = load_config(write_config())
     data = bundle(episode_factory)
     save(cfg, data)
-    old = cfg.root / "outputs/promos/candidates_E05.json"
+    old = cfg.root / "outputs/runs/dev/promos/candidates_E05.json"
     write_json(old, {"invented_existing": True})
-    (cfg.root / "outputs/understanding/intensity_E05.json").unlink()
+    (cfg.root / "outputs/runs/dev/understanding/intensity_E05.json").unlink()
     before = old.read_bytes()
     with pytest.raises(UnderstandingError):
         builder.run(cfg, [data[0]])

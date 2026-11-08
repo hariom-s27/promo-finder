@@ -321,9 +321,8 @@ def _time(ms: int) -> str:
 
 def review(episodes: list[Episode], outputs: dict[int, dict]) -> str:
     lines = ["# DEV review", ""]
-    dev = set(parse_eps(DEV_SPEC))
     for episode in episodes:
-        if episode.ep not in dev:
+        if episode.ep in HELD_OUT:
             continue
         index = build_index([episode])
         promos = outputs[episode.ep]["candidates"][:2]
@@ -347,10 +346,10 @@ def run(cfg: Config, episodes: list[Episode], *, allow_held_out: bool = False) -
     prepared = []
     for episode in episodes:
         number = f"E{episode.ep:02d}"
-        moment_data = read_json(cfg.root / f"outputs/moments/moments_{number}.json")
-        reveal_data = read_json(cfg.root / f"outputs/understanding/reveals_{number}.json")
-        intensity = read_json(cfg.root / f"outputs/understanding/intensity_{number}.json")
-        policy = read_json(cfg.root / f"outputs/understanding/policy_{number}.json")
+        moment_data = read_json(cfg.output_root / f"moments/moments_{number}.json")
+        reveal_data = read_json(cfg.output_root / f"understanding/reveals_{number}.json")
+        intensity = read_json(cfg.output_root / f"understanding/intensity_{number}.json")
+        policy = read_json(cfg.output_root / f"understanding/policy_{number}.json")
         validate_artifacts(episode, moment_data, reveal_data, intensity, policy)
         prepared.append((episode, moment_data, reveal_data, intensity, policy, previous_episode(cfg, episode, selected)))
     outputs, summaries = {}, {}
@@ -371,9 +370,9 @@ def run(cfg: Config, episodes: list[Episode], *, allow_held_out: bool = False) -
                                           for mode in ("block", "flag")}}
     # All requested artifacts and results are validated before replacing outputs.
     for episode in episodes:
-        write_json(cfg.root / f"outputs/promos/candidates_E{episode.ep:02d}.json", outputs[episode.ep])
-    write_json(cfg.root / "outputs/promos/build_summary.json", summary)
-    path = cfg.root / "outputs/promos/dev_review.md"
+        write_json(cfg.output_root / f"promos/candidates_E{episode.ep:02d}.json", outputs[episode.ep])
+    write_json(cfg.output_root / "promos/build_summary.json", summary)
+    path = cfg.output_root / "promos/dev_review.md"
     temporary = path.with_suffix(".md.tmp")
     temporary.write_text(review(episodes, outputs), encoding="utf-8")
     temporary.replace(path)

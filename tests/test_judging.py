@@ -31,7 +31,7 @@ def setup(cfg, episode_factory):
     data = bundle(episode_factory)
     output, _ = build_episode(*data, cfg)
     prepare_context(cfg, [data[0]], baseline=False)
-    write_json(cfg.root / "outputs/promos/candidates_E05.json", output)
+    write_json(cfg.root / "outputs/runs/dev/promos/candidates_E05.json", output)
     target = cfg.root / "config/p03_human_majorities.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(yaml.safe_dump({"promos": {f"P03-E07-{i:03d}": dict.fromkeys(("Q1", "Q2", "Q3"), True) for i in range(1, 7)}}), encoding="utf-8")
@@ -79,7 +79,7 @@ def jcfg(write_config, monkeypatch):
 def client(cfg, provider):
     clock = FakeClock()
     return LLMClient(cfg, client_factory=lambda *args: provider, clock=clock, sleep=clock.sleep,
-                     cache_dir=cfg.root / "outputs/judge/.llm_cache", token_estimator=lambda text: len(text) // 4)
+                     cache_dir=cfg.root / "outputs/runs/dev/judge/.llm_cache", token_estimator=lambda text: len(text) // 4)
 
 
 def test_cold_request_contains_only_local_ids_and_fixed_prefix(episode_factory):
@@ -125,14 +125,14 @@ def test_run_repeats_maps_evidence_and_fidelity(jcfg, episode_factory):
     provider = Provider(long=True)
     result = judging.run(jcfg, [ep], client(jcfg, provider))
     assert len(provider.calls) == 5  # one key, three cold, one fidelity
-    rows = json.loads((jcfg.root / "outputs/judge/judge_E05.json").read_text())["items"]
+    rows = json.loads((jcfg.root / "outputs/runs/dev/judge/judge_E05.json").read_text())["items"]
     item = rows[0]
     assert item["aggregate"]["successful_runs"] == 3 and item["aggregate"]["flip_rate"] == 0
     assert item["runs"][0]["answers"]["hook_now"]["evidence"] == ep.lines[0].id
     assert len(item["runs"][0]["answers"]["reader_who"].split()) == 15
     assert item["runs"][0]["metadata"]["trims_by_field"]["reader_who"] == 1
     assert item["fidelity"]["cold"] is False and item["fidelity"]["status"] == "ok"
-    key = json.loads((jcfg.root / "outputs/judge/answer_key_E05.json").read_text())["answers"][0]
+    key = json.loads((jcfg.root / "outputs/runs/dev/judge/answer_key_E05.json").read_text())["answers"][0]
     assert key["trims_by_field"]["who"] == 1 and len(key["who"].split()) == 15
     assert result["failed_runs_by_part"] == dict.fromkeys(("answer_key", "cold_judge", "fidelity"), 0)
     assert all(call["max_completion_tokens"] == 800 for call in provider.calls[1:4])
@@ -145,7 +145,7 @@ def test_bad_runs_retry_once_fail_and_do_not_aggregate(jcfg, episode_factory):
     provider = Provider(bad_cold=True)
     result = judging.run(jcfg, [ep], client(jcfg, provider))
     assert len(provider.calls) == 7 and result["failed_runs_by_part"]["cold_judge"] == 3
-    item = json.loads((jcfg.root / "outputs/judge/judge_E05.json").read_text())["items"][0]
+    item = json.loads((jcfg.root / "outputs/runs/dev/judge/judge_E05.json").read_text())["items"][0]
     assert item["aggregate"]["successful_runs"] == 0 and item["aggregate"]["hook_rating_mean"] is None
     assert item["fidelity"]["status"] == "skipped"
 
@@ -154,7 +154,7 @@ def test_missing_key_retries_once_then_records_missing(jcfg, episode_factory):
     ep, promo = setup(jcfg, episode_factory)
     provider = Provider(missing=True)
     summary = judging.run(jcfg, [ep], client(jcfg, provider))
-    output = json.loads((jcfg.root / "outputs/judge/answer_key_E05.json").read_text())
+    output = json.loads((jcfg.root / "outputs/runs/dev/judge/answer_key_E05.json").read_text())
     assert output["missing"] == [promo["promo_id"]] and len(provider.calls) == 5
     assert summary["failed_runs_by_part"]["answer_key"] == 1
 
@@ -168,11 +168,11 @@ def test_invalid_fidelity_excluded(jcfg, episode_factory):
 
 def test_no_items_skips_key_and_all_calls(jcfg, episode_factory):
     ep, _ = setup(jcfg, episode_factory)
-    write_json(jcfg.root / "outputs/promos/candidates_E05.json", {"episode": 5, "candidates": []})
+    write_json(jcfg.root / "outputs/runs/dev/promos/candidates_E05.json", {"episode": 5, "candidates": []})
     provider = Provider()
     judging.run(jcfg, [ep], client(jcfg, provider))
     assert not provider.calls
-    assert json.loads((jcfg.root / "outputs/judge/answer_key_E05.json").read_text())["status"] == "no items"
+    assert json.loads((jcfg.root / "outputs/runs/dev/judge/answer_key_E05.json").read_text())["status"] == "no items"
 
 
 @pytest.mark.parametrize("changed,expected", [(0, 0), (1, .2), (2, .4), (5, 1)])

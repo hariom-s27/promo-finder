@@ -46,6 +46,6 @@ def test_targeted_pings_check_true_and_stop_on_qwen_failure(jcfg, monkeypatch, c
     monkeypatch.setattr("promo_finder.llm.LLMClient", lambda *a, **k: actual)
     assert cli.main(["ping", "--models", "groq_qwen,featherless_llama", "--no-cache", "--fail-fast"]) == (0 if ok else 1)
     assert len(provider.calls) == expected_requests
-    rows = json.loads((jcfg.root / "outputs/judge/pings.json").read_text())["models"]
+    rows = json.loads((jcfg.root / "outputs/runs/dev/judge/pings.json").read_text())["models"]
     assert len(rows) == (2 if ok else 1)
     assert '"data"' not in capsys.readouterr().out

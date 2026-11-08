@@ -1,0 +1,58 @@
+version: 1
+model_key: azure_mini
+reasoning_effort: low
+max_completion_tokens: 6000
+top_k: 5
+max_segments: 2
+
+prompt: |-
+  You are a promo editor. Find the best 20–60 second promos in this episode: a strong hook in the first 3 seconds, ending on a cliffhanger, understandable alone.
+  Return up to 5 promos, best first. Each promo = 1 or 2 segments (start and end time in seconds) from this episode.
+
+schema:
+  type: object
+  properties:
+    promos:
+      type: array
+      description: "Up to 5 promos, best first."
+      items:
+        type: object
+        properties:
+          segments:
+            type: array
+            description: "1 or 2 segments from this episode."
+            items:
+              type: object
+              properties:
+                start_s:
+                  type: number
+                end_s:
+                  type: number
+              required: [start_s, end_s]
+              additionalProperties: false
+          why:
+            type: string
+            description: "max 12 words"
+        required: [segments, why]
+        additionalProperties: false
+  required: [promos]
+  additionalProperties: false
+
+input:
+  show_header: same_as_tool
+  row_format: "mm:ss.s–mm:ss.s | kind | speaker | emotion | text"
+  line_ids: false
+  character_sheet: false
+  reveals: false
+  moments: false
+  judge: false
+
+order:
+  within_episode: model_output_order
+  across_episodes: round_robin
+  episodes: ascending
+  outer_loop: within_episode_rank
+
+snap_rule: "eval/match_rule.md §6"
+sensitivity:
+  duration_check: false

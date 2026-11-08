@@ -144,3 +144,18 @@ def snap_to_lines(ep: int, start_ms: int, end_ms: int, index: Mapping[str, Line]
         later = [x for x in lines if x.idx >= first.idx]
         last = max(later, key=lambda x: (x.end_ms, x.idx))
     return (first.id, last.id), first.start_ms - start_ms, last.end_ms - end_ms
+
+
+def snap_nearest_boundaries(ep: int, start_ms: float, end_ms: float,
+                            index: Mapping[str, Line]) -> tuple[tuple[str, str], float, float]:
+    """Frozen match-rule §6 snapping; independently choose starts and ends.
+
+    Never swap bounds or constrain the last line: the checker handles invalid
+    spans. Equal distances select the earlier boundary, then earlier file line.
+    """
+    lines = _episode_lines(index, ep)
+    if not lines:
+        raise ValueError("unknown episode")
+    first = min(lines, key=lambda line: (abs(line.start_ms - start_ms), line.start_ms, line.idx))
+    last = min(lines, key=lambda line: (abs(line.end_ms - end_ms), line.end_ms, line.idx))
+    return (first.id, last.id), first.start_ms - start_ms, last.end_ms - end_ms

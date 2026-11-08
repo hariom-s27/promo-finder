@@ -59,7 +59,7 @@ class FakeUnderstandingProvider:
 
 def client_for(cfg, provider):
     return LLMClient(cfg, client_factory=lambda *args: provider,
-                     cache_dir=cfg.root / "outputs/understanding/.llm_cache",
+                     cache_dir=cfg.root / "outputs/runs/dev/understanding/.llm_cache",
                      token_estimator=lambda text: (len(text) + 3) // 4, sleep=lambda seconds: None)
 
 
@@ -126,7 +126,7 @@ def test_pipeline_fake_provider_outputs_trims_models_and_cost(cfg, dev):
     assert summary["trims_by_field"]["characters"]["role"] == 2
     assert summary["trims_by_field"]["reveals"]["what"] == 8
     assert summary["llm"]["parts"]["characters"]["model_strings"] == ["fake-understanding-2026"]
-    out = cfg.root / "outputs/understanding"
+    out = cfg.root / "outputs/runs/dev/understanding"
     assert len(list(out.glob("intensity_E*.json"))) == len(dev)
     assert len(list(out.glob("policy_E*.json"))) == len(dev)
     assert len(list(out.glob("reveals_E*.json"))) == len(dev)
@@ -154,7 +154,7 @@ def test_low_coverage_continues_and_writes_all_outputs(cfg, dev):
     summary = understanding.run(cfg, dev, client=client_for(cfg, provider))
     assert len(provider.calls) == 11 and summary["status"] == "complete"
     assert summary["coverage_below_target"] is True
-    out = cfg.root / "outputs/understanding"
+    out = cfg.root / "outputs/runs/dev/understanding"
     sheet = json.loads((out / "characters.json").read_text(encoding="utf-8"))
     assert sheet["coverage_below_target"] is True
     assert (out / "show_header.json").is_file() and len(list(out.glob("reveals_E*.json"))) == 8
@@ -177,7 +177,7 @@ def test_failure_writes_safe_summary_and_counts(cfg, dev):
     provider = FakeUnderstandingProvider(fail=True)
     with pytest.raises(ProviderError):
         understanding.run(cfg, dev, client=client_for(cfg, provider))
-    summary = json.loads((cfg.root / "outputs/understanding/run_summary.json").read_text(encoding="utf-8"))
+    summary = json.loads((cfg.root / "outputs/runs/dev/understanding/run_summary.json").read_text(encoding="utf-8"))
     assert summary["status"] == "failed" and summary["error_code"] == "PROVIDER_ERROR"
     assert summary["llm"]["parts"]["characters"]["failed_calls"] == 1
     assert summary["llm"]["parts"]["characters"]["http_failures"] == 1

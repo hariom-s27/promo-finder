@@ -18,11 +18,18 @@ from .understanding_common import UnderstandingError, cost_usd, write_json
 DEV_SPEC = "5-8,19-22"
 
 
+class HeldOutRefused(UnderstandingError):
+    code = "HELD_OUT_REFUSED"
+
+    def __init__(self):
+        super().__init__("refused: held-out episodes require --allow-held-out")
+
+
 def check_selection(eps: list[int], allow_held_out: bool = False) -> None:
     if not eps:
         raise UnderstandingError("empty episode selection")
     if set(eps) & set(HELD_OUT) and not allow_held_out:
-        raise UnderstandingError("refused: held-out episodes require --allow-held-out")
+        raise HeldOutRefused()
 
 
 def load_requested(cfg: Config, eps: list[int], allow_held_out: bool = False) -> list[Episode]:
@@ -134,8 +141,10 @@ def run(cfg: Config, episodes: list[Episode], *, client: LLMClient | None = None
         no_cache: bool = False, allow_held_out: bool = False) -> dict:
     check_selection([e.ep for e in episodes], allow_held_out)
     preflight = dry_run(cfg, episodes, allow_held_out)
-    out = cfg.root / "outputs/understanding"
+    out = cfg.output_root / "understanding"
     client = client or LLMClient(cfg, cache_dir=out / ".llm_cache")
+    if hasattr(client, "begin_phase"):
+        client.begin_phase()
     start = len(client.records)
     scanner = PolicyScanner()
     summary = {"episodes": [e.ep for e in episodes], "planned_calls": preflight["planned_calls"],
@@ -170,7 +179,7 @@ def run(cfg: Config, episodes: list[Episode], *, client: LLMClient | None = None
         summary["status"] = "complete"
     except Exception as exc:
         # Never serialize exception messages; providers may echo supplied content.
-        summary.update(status="failed", error_code=exc.code if hasattr(exc, "code") else type(exc).__name__)
+        summary.update(status="RATE_LIMITED" if getattr(exc, "code", None) == "RATE_LIMITED" else "failed", error_code=exc.code if hasattr(exc, "code") else type(exc).__name__)
         raise
     finally:
         summary["llm"] = call_summary(client, cfg, start)
@@ -199,7 +208,7 @@ def cmd_understand(cfg: Config, args) -> int:
         return 0
     except Exception as exc:
         if isinstance(exc, UnderstandingError):
-            print(f"understand: {exc}", file=sys.stderr)
+            print(f"understand: {exc}; error={exc.code}", file=sys.stderr)
         else:
             print("understand: failed; inspect count-only run_summary.json; error=" +
                   (exc.code if hasattr(exc, "code") else type(exc).__name__), file=sys.stderr)

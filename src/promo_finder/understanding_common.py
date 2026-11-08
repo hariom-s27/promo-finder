@@ -57,9 +57,16 @@ def trim(value: str, limit: int, field: str, counts: Counter) -> str:
 
 
 def metadata(result: LLMResult, trims: Counter | None = None, **extra) -> dict:
+    provider_metadata = {key: getattr(result, key, None) for key in
+                         ("reasoning_tokens", "token_parameter", "endpoint_form", "thinking_method")
+                         if getattr(result, key, None) is not None}
+    if getattr(result, "rate_limit_headers", None):
+        provider_metadata["response_headers"] = result.rate_limit_headers
     return {"model_string": result.model_string, "cache_key": result.cache_key,
             "cached": result.cached, "usage": result.usage.model_dump(),
-            "trims_by_field": dict(trims or {}), **extra}
+            "validation_retry_used": result.validation_retry_used,
+            "final_temperature": result.final_temperature,
+            "trims_by_field": dict(trims or {}), **provider_metadata, **extra}
 
 
 def write_json(path: Path, data) -> None:

@@ -15,7 +15,7 @@ from test_llm import FakeClock, http_error, resp
 
 
 def prepare_context(cfg, episodes, baseline=True):
-    out = cfg.root / "outputs/understanding"
+    out = cfg.root / "outputs/runs/dev/understanding"
     write_json(out / "show_header.json", {key: "invented" for key in LIMITS})
     write_json(out / "characters.json", {"characters": [
         {"speaker_label": "TEST SPEAKER", "role": "invented role", "relationships": []}]})
@@ -69,7 +69,7 @@ class FindProvider:
 def client_for(cfg, provider):
     clock = FakeClock()
     return LLMClient(cfg, client_factory=lambda *args: provider, clock=clock, sleep=clock.sleep,
-                     cache_dir=cfg.root / "outputs/understanding/.llm_cache", token_estimator=lambda text: len(text) // 4)
+                     cache_dir=cfg.root / "outputs/runs/dev/understanding/.llm_cache", token_estimator=lambda text: len(text) // 4)
 
 
 def test_dry_run_budget_estimates_and_no_outputs(find_cfg, dev):
@@ -93,7 +93,7 @@ def test_cli_dry_run_never_creates_client_or_loads_secrets(find_cfg, dev, monkey
     assert cli.main(["find", "--dry-run"]) == 0
     printed = capsys.readouterr().out
     assert json.loads(printed)["planned_calls"] == 16
-    assert "invented" not in printed and not (find_cfg.root / "outputs/moments").exists()
+    assert "invented" not in printed and not (find_cfg.root / "outputs/runs/dev/moments").exists()
 
 
 @pytest.mark.parametrize("spec", ["1", "5,11", "26-29", "42-45"])
@@ -112,7 +112,7 @@ def test_find_budget_refused_before_archive(find_cfg, dev):
     find_cfg.max_calls_per_run = 15
     with pytest.raises(UnderstandingError):
         finding.run(find_cfg, dev)
-    assert not (find_cfg.root / "outputs/understanding/archive_p02").exists()
+    assert not (find_cfg.root / "outputs/runs/dev/understanding/archive_p02").exists()
 
 
 def test_find_order_archive_counts_models_and_low_effort(find_cfg, dev):
@@ -127,10 +127,10 @@ def test_find_order_archive_counts_models_and_low_effort(find_cfg, dev):
     assert result["llm"]["http_requests"] == 16 and result["llm"]["input_tokens"] == 272
     assert result["llm"]["output_tokens"] == 112 and result["llm"]["failures"] == 0
     assert result["llm"]["parts"]["moments"]["model_strings"] == ["fake-find-2026"]
-    archive = find_cfg.root / "outputs/understanding/archive_p02"
+    archive = find_cfg.root / "outputs/runs/dev/understanding/archive_p02"
     assert len(list(archive.glob("reveals_E*.json"))) == 8
     assert all(not json.loads(path.read_text(encoding="utf-8"))["marks"] for path in archive.glob("*.json"))
-    assert len(list((find_cfg.root / "outputs/moments").glob("moments_E*.json"))) == 8
+    assert len(list((find_cfg.root / "outputs/runs/dev/moments").glob("moments_E*.json"))) == 8
 
 
 def test_archive_exists_before_first_provider_request(find_cfg, dev):
@@ -138,7 +138,7 @@ def test_archive_exists_before_first_provider_request(find_cfg, dev):
     provider = FindProvider()
     original = provider.chat.completions.create
     def check_archive(**kw):
-        assert len(list((find_cfg.root / "outputs/understanding/archive_p02").glob("*.json"))) == 8
+        assert len(list((find_cfg.root / "outputs/runs/dev/understanding/archive_p02").glob("*.json"))) == 8
         return original(**kw)
     provider.chat.completions.create = check_archive
     finding.run(find_cfg, dev, client=client_for(find_cfg, provider))
@@ -147,7 +147,7 @@ def test_archive_exists_before_first_provider_request(find_cfg, dev):
 def test_cache_and_no_cache_keep_archive_unchanged(find_cfg, dev):
     prepare_context(find_cfg, dev)
     finding.run(find_cfg, dev, client=client_for(find_cfg, FindProvider()))
-    archive = find_cfg.root / "outputs/understanding/archive_p02"
+    archive = find_cfg.root / "outputs/runs/dev/understanding/archive_p02"
     before = {path.name: path.read_bytes() for path in archive.glob("*.json")}
     provider = FindProvider(fail=True)
     result = finding.run(find_cfg, dev, client=client_for(find_cfg, provider))
@@ -186,7 +186,7 @@ def test_transport_accounting_and_safe_failure(find_cfg, dev):
     provider = FindProvider(fail=True)
     with pytest.raises(ProviderError):
         finding.run(find_cfg, dev, client=client_for(find_cfg, provider), no_cache=True)
-    raw = (find_cfg.root / "outputs/moments/find_summary.json").read_text(encoding="utf-8")
+    raw = (find_cfg.root / "outputs/runs/dev/moments/find_summary.json").read_text(encoding="utf-8")
     failed = json.loads(raw)
     assert failed["status"] == "failed" and failed["llm"]["failures"] == 1
     assert failed["llm"]["http_requests"] == 1 and "invented failure text" not in raw

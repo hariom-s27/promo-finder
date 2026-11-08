@@ -80,7 +80,7 @@ def make_client(cfg, replies, **kw):
 
 
 def read_log(cfg):
-    p = cfg.root / "outputs" / "logs" / "llm_calls.jsonl"
+    p = cfg.output_root / "logs" / "llm_calls.jsonl"
     return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines()]
 
 
@@ -93,7 +93,7 @@ def test_cache_miss_then_hit(cfg):
     r2 = c.call("fake_a", MSGS, SCHEMA, purpose="t")
     assert r2.cached and r2.data == {"ok": True} and r2.cache_key == r1.cache_key
     assert len(fake.calls) == 1
-    assert (cfg.root / ".cache" / "llm" / f"{r1.cache_key}.json").is_file()
+    assert (cfg.output_root / ".llm_cache" / f"{r1.cache_key}.json").is_file()
     r3 = c.call("fake_a", MSGS, SCHEMA, purpose="t", no_cache=True)
     assert not r3.cached and len(fake.calls) == 2
 
@@ -132,7 +132,7 @@ def test_truncated_twice_raises_and_caps_tokens(cfg):
     with pytest.raises(EmptyOrTruncated):
         c.call("fake_b", MSGS, SCHEMA, purpose="t")
     assert [k["max_completion_tokens"] for k in fake.calls] == [10000, 16000]
-    assert not list((cfg.root / ".cache" / "llm").glob("*.json"))  # failures are never cached
+    assert not list((cfg.output_root / ".llm_cache").glob("*.json"))  # failures are never cached
 
 
 # ------------------------------------------------------------ schema
@@ -184,7 +184,7 @@ def test_json_object_fallback_and_enum_validation(cfg):
     assert len(fake.calls) == 3 and c.calls_made == 3
     assert fake.calls[0]["response_format"]["type"] == "json_schema"
     assert fake.calls[1]["response_format"] == {"type": "json_object"}
-    assert "JSON schema" in fake.calls[1]["messages"][0]["content"]
+    assert "Return only JSON matching this schema: " in fake.calls[1]["messages"][0]["content"]
     assert json.loads(c.mode_path.read_text())["fakeprov/fake-b"] == "json_object"
 
 
@@ -376,7 +376,7 @@ def test_call_log_has_hash_not_prompt_or_key(cfg):
     c, _, _, _ = make_client(cfg, [resp('{"ok": true}')])
     c.call("fake_a", MSGS, SCHEMA, purpose="unit")
     c.call("fake_a", MSGS, SCHEMA, purpose="unit")
-    raw = (cfg.root / "outputs" / "logs" / "llm_calls.jsonl").read_text(encoding="utf-8")
+    raw = (cfg.output_root / "logs" / "llm_calls.jsonl").read_text(encoding="utf-8")
     assert "invented prompt text" not in raw and "fake-key-value-not-real" not in raw
     recs = [row for row in read_log(cfg) if row.get("event") != "http_attempt_started"]
     assert len(recs) == 2 and [r["cached"] for r in recs] == [False, True]

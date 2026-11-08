@@ -35,6 +35,7 @@ class PromoCfg(BaseModel):
 class ActiveCfg(BaseModel):
     picker: str
     judge: str
+    free_path_judge: Optional[str] = None
 
 
 class IntensityCfg(BaseModel):
@@ -76,12 +77,23 @@ class PurposeCfg(BaseModel):
     max_completion_tokens: Optional[int] = Field(default=None, gt=0)
 
 
+class GroqDailyCfg(BaseModel):
+    daily_safety_factor: float = Field(default=1.2, ge=1, allow_inf_nan=False)
+
+
+class FoundryQuotaCfg(BaseModel):
+    tpm: int = Field(default=20000, gt=0)
+    rpm: int = Field(default=20, gt=0)
+
+
 class RateLimitCfg(BaseModel):
     max_concurrent: int = Field(default=1, ge=1)
     # Old configurations keep their previous pacing; production values live in YAML.
     min_interval_s: float = Field(default=0, ge=0, allow_inf_nan=False)
     honour_retry_after: bool = True
     max_retry_after_s: float = Field(default=60, gt=0, le=60, allow_inf_nan=False)
+    groq: GroqDailyCfg = Field(default_factory=GroqDailyCfg)
+    azure_foundry: dict[str, FoundryQuotaCfg] = Field(default_factory=dict)
 
 
 class SpoilerCfg(BaseModel):
@@ -126,7 +138,7 @@ class ModelCfg(BaseModel):
     provider: str
     model: str
     family: str
-    structured_output: Literal["strict", "auto"] = "strict"
+    structured_output: Literal["strict", "auto", "json_object"] = "strict"
     params: dict = Field(default_factory=dict)
 
     @property
@@ -153,10 +165,25 @@ class ProviderCfg(BaseModel):
         return [n for n in (self.key_env, self.endpoint_env) if n]
 
 
+class FullRunJudgeCfg(BaseModel):
+    top_per_episode: int = Field(default=4, ge=1)
+    repeat_top_per_episode: int = Field(default=1, ge=0)
+    repeat_runs: Literal[3] = 3
+    fidelity_runs: Literal[1] = 1
+
+    @model_validator(mode="after")
+    def _selection(self):
+        if self.repeat_top_per_episode > self.top_per_episode:
+            raise ValueError("repeated selection exceeds judged selection")
+        return self
+
+
 class JudgeCfg(BaseModel):
     repeat_top_per_episode: int = Field(default=2, ge=0)
     repeat_runs: int = Field(default=3, ge=3)
     temperature: float = Field(default=0.7, ge=0, le=2, allow_inf_nan=False)
+    retry_temperature: float = Field(default=0.3, ge=0, le=2, allow_inf_nan=False)
+    full_run: FullRunJudgeCfg = Field(default_factory=FullRunJudgeCfg)
     shuffle_seed: int = 52
     fidelity_dependency_allowance_tokens: int = Field(default=512, ge=0)
 
@@ -185,10 +212,20 @@ class Config(BaseModel):
     judge: JudgeCfg = Field(default_factory=JudgeCfg)
 
     _root: Path = PrivateAttr(default=PROJECT_ROOT)
+    _config_path: Optional[Path] = PrivateAttr(default=None)
+    _run_name: str = PrivateAttr(default="dev")
 
     @property
     def root(self) -> Path:
         return self._root
+
+    @property
+    def output_root(self) -> Path:
+        return self.root / "outputs" / "runs" / self._run_name
+
+    @property
+    def run_name(self) -> str:
+        return self._run_name
 
     @model_validator(mode="after")
     def _check(self) -> "Config":
@@ -198,6 +235,8 @@ class Config(BaseModel):
             if m.provider not in self.providers:
                 raise ValueError(f"model '{name}' uses unknown provider '{m.provider}'")
         roles = {"picker": self.active.picker, "judge": self.active.judge}
+        if self.active.free_path_judge is not None:
+            roles["free_path_judge"] = self.active.free_path_judge
         for role, key in roles.items():
             if key not in self.models:
                 raise ValueError(f"active.{role} = '{key}' is not defined under models")
@@ -210,11 +249,28 @@ class Config(BaseModel):
                 f"no self-judging: active.picker '{self.active.picker}' and active.judge "
                 f"'{self.active.judge}' are both family '{fp}'. Pick a judge from another family."
             )
+        if self.active.free_path_judge:
+            family = self.models[self.active.free_path_judge].family.strip().lower()
+            if not family or family in {fp, "tbd"}:
+                raise ValueError("free_path_judge must have a distinct known family")
         return self
 
     def usable_models(self) -> dict[str, ModelCfg]:
         """Models that are not TBD (TBD models are skipped everywhere)."""
         return {k: m for k, m in self.models.items() if not m.is_tbd}
+
+
+def model_quota(cfg: Config, model_key: str) -> dict:
+    """The same effective limits drive live reservations and offline simulation."""
+    model = cfg.models[model_key]
+    provider = cfg.providers[model.provider]
+    if model.provider == "azure_foundry":
+        limits = cfg.rate_limit.azure_foundry.get(model_key, FoundryQuotaCfg())
+        return {"tpm": limits.tpm, "rpm": limits.rpm, "utilization": .85,
+                "effective_tpm": max(1, limits.tpm * 85 // 100),
+                "effective_rpm": max(1, limits.rpm * 85 // 100)}
+    return {"tpm": provider.tpm, "rpm": provider.rpm, "utilization": 1.0,
+            "effective_tpm": provider.tpm, "effective_rpm": provider.rpm}
 
 
 def load_config(path: Optional[Path | str] = None) -> Config:
@@ -234,6 +290,7 @@ def load_config(path: Optional[Path | str] = None) -> Config:
         raise ConfigError(msgs) from None
     root = p.resolve().parent
     cfg._root = root
+    cfg._config_path = p.resolve()
     if not cfg.data_dir.is_absolute():
         cfg.data_dir = (root / cfg.data_dir).resolve()
     return cfg

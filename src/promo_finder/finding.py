@@ -13,14 +13,8 @@ from .llm import LLMClient, _prompt_text, estimate_tokens, to_strict
 from .models import Episode
 from .understanding import check_selection as check_understanding_selection
 from .understanding import load_requested, validate_inputs
+from .understanding import HeldOutRefused
 from .understanding_common import UnderstandingError, cost_usd, write_json
-
-
-class HeldOutRefused(UnderstandingError):
-    code = "HELD_OUT_REFUSED"
-
-    def __init__(self):
-        super().__init__("refused: held-out episodes require --allow-held-out")
 
 
 def check_selection(eps: list[int], allow_held_out: bool = False) -> None:
@@ -37,7 +31,7 @@ def read_json(path):
 
 
 def context(cfg: Config) -> tuple[dict, dict]:
-    out = cfg.root / "outputs/understanding"
+    out = cfg.output_root / "understanding"
     header, sheet = read_json(out / "show_header.json"), read_json(out / "characters.json")
     # Exercise both serializers before any secrets or physical requests.
     from .characters import roles
@@ -47,7 +41,7 @@ def context(cfg: Config) -> tuple[dict, dict]:
     return header, sheet
 
 
-def dry_run(cfg: Config, episodes: list[Episode], allow_held_out: bool = False) -> dict:
+def dry_run(cfg: Config, episodes: list[Episode], allow_held_out: bool = False, *, reuse_reveals=False) -> dict:
     check_selection([episode.ep for episode in episodes], allow_held_out)
     validate_inputs(episodes)
     header, sheet = context(cfg)
@@ -66,6 +60,8 @@ def dry_run(cfg: Config, episodes: list[Episode], allow_held_out: bool = False) 
             estimate(moments.messages(e, header, sheet, {"marks": []}), moments.schema(e)) for e in episodes),
             "dependency_allowance_tokens": len(episodes) * completion},
     }
+    if reuse_reveals:
+        parts.pop("reveals")
     for part in parts.values():
         part["estimated_input_tokens"] = part["known_input_tokens"] + part["dependency_allowance_tokens"]
         part["output_budget_tokens"] = part["calls"] * completion
@@ -110,7 +106,7 @@ def call_summary(client: LLMClient, cfg: Config, start: int = 0) -> dict:
 
 
 def archive_p02(cfg: Config) -> dict:
-    out = cfg.root / "outputs/understanding"
+    out = cfg.output_root / "understanding"
     archive = out / "archive_p02"
     archive.mkdir(parents=True, exist_ok=True)
     for path in sorted(out.glob("reveals_E*.json")):
@@ -138,35 +134,44 @@ def acceptance(marks: dict) -> dict:
 
 
 def run(cfg: Config, episodes: list[Episode], *, client: LLMClient | None = None,
-        no_cache: bool = False, allow_held_out: bool = False) -> dict:
-    preflight = dry_run(cfg, episodes, allow_held_out)
+        no_cache: bool = False, allow_held_out: bool = False, reuse_reveals=False) -> dict:
+    preflight = dry_run(cfg, episodes, allow_held_out, reuse_reveals=reuse_reveals)
     header, sheet = context(cfg)
-    client = client or LLMClient(cfg, cache_dir=cfg.root / "outputs/understanding/.llm_cache")
+    client = client or LLMClient(cfg, cache_dir=cfg.output_root / "understanding/.llm_cache")
+    if hasattr(client, "begin_phase"):
+        client.begin_phase()
     start = len(client.records)
     summary = {"status": "running", "episodes": [e.ep for e in episodes],
                "planned_calls": preflight["planned_calls"], "reveals_v2": {}, "moments": {}}
     try:
-        summary["p02_marks"] = archive_p02(cfg)
+        summary["p02_marks"] = {} if reuse_reveals else archive_p02(cfg)
         marks_by_ep = {}
         for episode in episodes:
-            data = reveals.build(episode, header, sheet, cfg, client, no_cache, purpose_prefix="p03")
-            write_json(cfg.root / f"outputs/understanding/reveals_E{episode.ep:02d}.json", data)
+            if reuse_reveals:
+                data = read_json(cfg.output_root / f"understanding/reveals_E{episode.ep:02d}.json")
+                if data.get("episode") != episode.ep or data.get("metadata", {}).get("version") != 2:
+                    raise UnderstandingError("invalid reused reveals")
+                from .understanding_common import validate
+                validate({"marks": data["marks"]}, reveals.schema(episode))
+            else:
+                data = reveals.build(episode, header, sheet, cfg, client, no_cache, purpose_prefix="p03")
+                write_json(cfg.output_root / f"understanding/reveals_E{episode.ep:02d}.json", data)
             marks_by_ep[episode.ep] = data
             summary["reveals_v2"][f"E{episode.ep:02d}"] = data["counts_by_type"]
         for episode in episodes:
             data = moments.build(episode, header, sheet, marks_by_ep[episode.ep], cfg, client, no_cache)
-            write_json(cfg.root / f"outputs/moments/moments_E{episode.ep:02d}.json", data)
+            write_json(cfg.output_root / f"moments/moments_E{episode.ep:02d}.json", data)
             summary["moments"][f"E{episode.ep:02d}"] = {"counts": data["counts"], "flags": data["flags"],
                 "trims_by_field": data["metadata"]["trims_by_field"]}
         summary["acceptance"] = acceptance(summary["reveals_v2"])
         summary["status"] = "acceptance_failed" if summary["acceptance"]["status"] == "failed" else "complete"
     except Exception as exc:
-        summary.update(status="failed", error_code=getattr(exc, "code", type(exc).__name__))
+        summary.update(status="RATE_LIMITED" if getattr(exc, "code", None) == "RATE_LIMITED" else "failed", error_code=getattr(exc, "code", type(exc).__name__))
         raise
     finally:
         summary["llm"] = call_summary(client, cfg, start)
         summary["pricing"] = cfg.pricing[cfg.active.picker].model_dump()
-        write_json(cfg.root / "outputs/moments/find_summary.json", summary)
+        write_json(cfg.output_root / "moments/find_summary.json", summary)
     return summary
 
 

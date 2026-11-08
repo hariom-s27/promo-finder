@@ -158,7 +158,8 @@ def cmd_ping(cfg: Config, args) -> int:
 
     if getattr(args, "models", None):
         return cmd_targeted_ping(cfg, args)
-    load_secrets(cfg)
+    if not args.dry_run:
+        load_secrets(cfg)
     client = LLMClient(cfg, dry_run=args.dry_run)
     results = []
     for key, m in cfg.models.items():
@@ -169,7 +170,7 @@ def cmd_ping(cfg: Config, args) -> int:
             results.append(row)
             continue
         p = cfg.providers[m.provider]
-        missing = [n for n in p.env_names() if not os.environ.get(n)]
+        missing = [] if args.dry_run else [n for n in p.env_names() if not os.environ.get(n)]
         if missing:
             row["status"] = "skipped (no key)"
             print(f"{key:18s} skipped (no key: {', '.join(missing)})")
@@ -217,7 +218,7 @@ def cmd_ping(cfg: Config, args) -> int:
         print("groq /models     skipped (no key)")
 
     if not args.dry_run:
-        out = cfg.root / "outputs"
+        out = cfg.output_root
         out.mkdir(parents=True, exist_ok=True)
         (out / "ping_results.json").write_text(json.dumps({"models": results, "groq_models": groq_info,
                                                            "calls_made": client.calls_made}, indent=2), encoding="utf-8")
@@ -225,38 +226,89 @@ def cmd_ping(cfg: Config, args) -> int:
     return 0
 
 
+def targeted_ping_budget(cfg, keys):
+    import math
+    # Foundry can negotiate two unsupported parameters and validate one retry;
+    # five slots also allow the consecutive-429 stop to report its real cause.
+    return sum(5 if cfg.models[key].provider == "azure_foundry" else math.ceil(1.2) for key in keys) if any(
+        cfg.models[key].provider == "azure_foundry" for key in keys) else math.ceil(len(keys) * 1.2)
+
+
 def cmd_targeted_ping(cfg: Config, args) -> int:
+    import math
     from .judging import call_accounting, purpose_options
-    from .llm import LLMClient, LLMError
+    from .llm import LLMClient, LLMError, MissingKey
     from .understanding_common import metadata, write_json
 
-    keys = args.models.split(",")
-    if keys != ["groq_qwen", "featherless_llama"]:
+    keys = [key.strip() for key in args.models.split(",")]
+    if (not keys or len(keys) != len(set(keys)) or
+            any(key not in {"groq_qwen", "featherless_llama", "azure_llama"} or key not in cfg.usable_models() for key in keys)):
         print("ping: invalid target selection", file=sys.stderr)
         return 1
     if args.dry_run:
-        print(json.dumps({"planned_ping_models": keys, "calls": 2}))
+        from .llm import estimate_tokens, _prompt_text, json_messages, to_strict
+        requests = {}
+        for key in keys:
+            foundry = cfg.models[key].provider == "azure_foundry"
+            options = purpose_options(cfg, "cold_judge" if foundry else "ping")
+            requests[key] = {"initial_response_format": {"type": "json_object"} if foundry else None,
+                             "temperature": cfg.judge.temperature if foundry else None,
+                             "max_output_tokens": options.get("max_completion_tokens"),
+                             "estimated_input_tokens": estimate_tokens(_prompt_text(json_messages(
+                                 [{"role": "user", "content": "Return only JSON with ok set to true."}], to_strict(PING_SCHEMA)), {}))}
+        print(json.dumps({"planned_ping_models": keys, "calls": len(keys), "max_calls_per_run": targeted_ping_budget(cfg, keys), "requests": requests}))
         return 0
+    cfg = cfg.model_copy(deep=True)
+    cfg.max_calls_per_run = targeted_ping_budget(cfg, keys)
+    if any(cfg.models[key].provider == "azure_foundry" for key in keys):
+        from .run_context import fingerprints
+        fingerprints(cfg, required=True)
+        if cfg.run_name == "dev":
+            from .judge_arms import archive_groq
+            archive_groq(cfg)
     load_secrets(cfg)
-    client = LLMClient(cfg, cache_dir=cfg.root / "outputs/judge/.llm_cache")
+    client = LLMClient(cfg, cache_dir=cfg.output_root / "judge/.llm_cache")
     rows = []
     status = 0
     for key in keys:
-        row = {"model_key": key}
+        model = cfg.models[key]
+        foundry = model.provider == "azure_foundry"
+        purpose = f"p07.ping.{key}" if foundry else f"p05.ping.{key}"
+        row = {"model_key": key, "provider": model.provider, "deployment": model.model,
+               "credential_set": "azure_openai" if model.provider == "azure" else model.provider,
+               "credential_variable_names": cfg.providers[model.provider].env_names()}
+        options = purpose_options(cfg, "cold_judge" if foundry else "ping")
+        if foundry:
+            options.update(temperature=cfg.judge.temperature, retry_temperature=cfg.judge.retry_temperature)
         try:
             result = client.call(key, [{"role": "user", "content": "Return only JSON with ok set to true."}],
-                PING_SCHEMA, purpose=f"p05.ping.{key}", no_cache=args.no_cache,
+                PING_SCHEMA, purpose=purpose, no_cache=True if foundry else args.no_cache,
                 response_validator=lambda data: [] if data["ok"] is True else ["$.ok: expected true"],
-                **purpose_options(cfg, "ping"))
+                **options)
             row.update(status="ok", **metadata(result, response_mode=result.response_mode))
+            if foundry:
+                row["protocol"] = client.protocol(key)
         except LLMError as exc:
-            row.update(status="failed", error_code=exc.code)
+            row.update(status="failed", error_code=exc.code, exact_error_code=exc.code)
+            if isinstance(exc, MissingKey):
+                row["missing_variable_name"] = exc.variable_name
+            failed = [r["error"] for r in client.records if r.get("purpose") == purpose and
+                      r.get("event") == "http_attempt_failed"]
+            row["http_errors"] = {code: failed.count(code) for code in sorted(set(failed))}
+            attempts = [r for r in client.records if r.get("purpose") == purpose and r.get("event") == "http_attempt_failed"]
+            if attempts:
+                row.update({name: attempts[-1].get(name) for name in ("http_status_code", "provider_error_code", "endpoint_form")})
+                row["exact_error_code"] = attempts[-1]["error"]
+            elif client.records:
+                row["exact_error_code"] = client.records[-1].get("error") or exc.code
             status = 1
         rows.append(row)
-        write_json(cfg.root / "outputs/judge/pings.json", {"models": rows,
+        write_json(cfg.output_root / f"judge/ping_{key}.json", row)
+        write_json(cfg.output_root / "judge/pings.json", {"models": rows,
+            "max_calls_per_run": cfg.max_calls_per_run,
             "failed_runs": sum(row["status"] == "failed" for row in rows), "llm": call_accounting(client.records, cfg)})
-        print(json.dumps(row, sort_keys=True))
-        if status and (args.fail_fast or key == "groq_qwen"):
+        print(row["missing_variable_name"] if row.get("missing_variable_name") else json.dumps(row, sort_keys=True))
+        if status and (args.fail_fast or key in {"groq_qwen", cfg.active.judge}):
             break
     return status
 
@@ -269,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     q = sub.add_parser("ping", help="one tiny call per configured model")
     q.add_argument("--no-cache", action="store_true", help="bypass the LLM cache")
     q.add_argument("--dry-run", action="store_true", help="estimate tokens, make no calls")
-    q.add_argument("--models", help="targeted P05 pings: groq_qwen,featherless_llama")
+    q.add_argument("--models", help="targeted pings: azure_llama,groq_qwen,featherless_llama")
     q.add_argument("--fail-fast", action="store_true", help="stop after a failed targeted ping")
     from .labelling import HELD_OUT_SPEC
 
@@ -315,6 +367,17 @@ def main(argv: list[str] | None = None) -> int:
     rank = sub.add_parser("rank", help="rank previously judged candidates without AI calls")
     rank.add_argument("--eps", default=DEV_SPEC)
     rank.add_argument("--allow-held-out", action="store_true")
+    from .baseline import cmd_baseline
+    from .pipeline import cmd_run
+    baseline = sub.add_parser("baseline", help="frozen free-timestamp baseline")
+    pipeline = sub.add_parser("run", help="run the complete pipeline in one run folder")
+    for command in (baseline, pipeline):
+        command.add_argument("--eps", required=True)
+        command.add_argument("--dry-run", action="store_true")
+        command.add_argument("--no-cache", action="store_true")
+        command.add_argument("--allow-held-out", action="store_true")
+    for command in (q, understand, find, build, judge, rank, baseline, pipeline):
+        command.add_argument("--run", default="dev", help="output run name (default dev)")
     args = ap.parse_args(argv)
     try:
         cfg = load_config()
@@ -323,5 +386,61 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     cmds = {"parse": cmd_parse, "ping": cmd_ping, "list-lines": cmd_list_lines, "check-gold": cmd_check_gold,
             "make-workbook": cmd_make_workbook, "export-gold": cmd_export_gold, "understand": cmd_understand,
-            "find": cmd_find, "build": cmd_build, "judge": cmd_judge, "rank": cmd_rank}
+            "find": cmd_find, "build": cmd_build, "judge": cmd_judge, "rank": cmd_rank,
+            "baseline": cmd_baseline, "run": cmd_run}
+    if hasattr(args, "run"):
+        from .run_context import for_run
+        try:
+            cfg = for_run(cfg, args.run)
+            if args.cmd != "ping":
+                from .finding import check_selection
+                from .labelling import parse_eps
+                check_selection(parse_eps(args.eps), args.allow_held_out)
+        except Exception as exc:
+            if getattr(exc, "code", None) == "HELD_OUT_REFUSED":
+                print(f"{args.cmd}: refused: held-out episodes require --allow-held-out; error=HELD_OUT_REFUSED", file=sys.stderr)
+            else:
+                print(f"{args.cmd}: refused; error=" + getattr(exc, "code", type(exc).__name__), file=sys.stderr)
+            return 1
+    if args.cmd in {"understand", "find", "build", "judge", "rank", "baseline", "ping"} and not getattr(args, "dry_run", False):
+        return recorded_command(cfg, args, cmds[args.cmd])
     return cmds[args.cmd](cfg, args)
+
+
+def recorded_command(cfg, args, command):
+    """Record standalone stage accounting without exposing generated content."""
+    import time
+    from .accounting import summarize
+    from .labelling import parse_eps
+    from .run_context import manifest
+    log = cfg.output_root / "logs/llm_calls.jsonl"
+    offset = log.stat().st_size if log.exists() else 0
+    started = time.monotonic()
+    eps = parse_eps(args.eps) if hasattr(args, "eps") else []
+    try:
+        result = command(cfg, args)
+        return result
+    finally:
+        records = []
+        if log.exists():
+            with log.open("rb") as stream:
+                stream.seek(offset)
+                records = [json.loads(line) for line in stream if line.strip()]
+        path = cfg.output_root / "run_manifest.json"
+        previous = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        stages = previous.get("stages", {})
+        stage_name = "ping:" + args.models if args.cmd == "ping" and getattr(args, "models", None) else args.cmd
+        stages[stage_name] = {"status": "RATE_LIMITED" if any(r.get("error") == "RATE_LIMITED" for r in records) else "complete" if locals().get("result") == 0 else "failed",
+                            "wall_time_s": time.monotonic() - started, "llm": summarize(records, cfg)}
+        extra = {}
+        summary = cfg.output_root / "judge/judge_summary.json"
+        if args.cmd == "judge" and summary.exists():
+            extra["max_calls_per_run"] = json.loads(summary.read_text(encoding="utf-8"))["preflight"]["max_calls_per_run"]
+        if args.cmd == "ping" and getattr(args, "models", None):
+            extra["max_calls_per_run"] = targeted_ping_budget(cfg, args.models.split(","))
+        baseline_summary = cfg.output_root / "baseline/baseline_summary.json"
+        if args.cmd == "baseline" and baseline_summary.exists():
+            extra["max_calls_per_run"] = json.loads(baseline_summary.read_text(encoding="utf-8"))["max_calls_per_run"]
+        extra["returned_model_strings"] = sorted(set(previous.get("returned_model_strings", [])) |
+                                                   {r["model_string"] for r in records if r.get("model_string")})
+        manifest(cfg, eps or previous.get("episodes", []), stages=stages, **extra)
