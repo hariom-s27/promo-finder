@@ -254,6 +254,17 @@ def main(argv: list[str] | None = None) -> int:
     understand.add_argument("--dry-run", action="store_true", help="estimate calls/tokens/cost without AI calls")
     understand.add_argument("--allow-held-out", action="store_true", help="explicitly override the held-out seal")
     understand.add_argument("--no-cache", action="store_true", help="bypass the LLM cache")
+    from .finding import cmd_find
+    from .builder import cmd_build
+
+    find = sub.add_parser("find", help="find reveal and moment pointers (DEV by default)")
+    find.add_argument("--eps", default=DEV_SPEC)
+    find.add_argument("--dry-run", action="store_true", help="estimate without secrets or calls")
+    find.add_argument("--no-cache", action="store_true", help="bypass the LLM cache")
+    find.add_argument("--allow-held-out", action="store_true", help="explicitly override the held-out seal")
+    build = sub.add_parser("build", help="build validated promos without AI calls")
+    build.add_argument("--eps", default=DEV_SPEC)
+    build.add_argument("--allow-held-out", action="store_true", help="explicitly override the held-out seal")
     args = ap.parse_args(argv)
     try:
         cfg = load_config()
@@ -261,5 +272,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"config error: {e}", file=sys.stderr)
         return 2
     cmds = {"parse": cmd_parse, "ping": cmd_ping, "list-lines": cmd_list_lines, "check-gold": cmd_check_gold,
-            "make-workbook": cmd_make_workbook, "export-gold": cmd_export_gold, "understand": cmd_understand}
+            "make-workbook": cmd_make_workbook, "export-gold": cmd_export_gold, "understand": cmd_understand,
+            "find": cmd_find, "build": cmd_build}
     return cmds[args.cmd](cfg, args)

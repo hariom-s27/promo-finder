@@ -6,6 +6,29 @@ max_calls_per_run: 50
 promo: { min_s: 20, max_s: 60, max_segments: 3 }
 active: { picker: azure_mini, judge: groq_qwen }        # switch model = edit one line
 understanding: { character_chunk_episodes: 4 }
+purposes:
+  reveals: { reasoning_effort: low }
+  moments: { reasoning_effort: low }
+rate_limit:
+  max_concurrent: 1
+  min_interval_s: 1.5
+  honour_retry_after: true
+  max_retry_after_s: 60
+spoiler:
+  reveal_mode: block
+  late_series_start: 46
+builder:
+  max_per_episode: 8
+  max_segments: 2
+  montage_first_min_s: 8
+  montage_first_max_s: 20
+  max_speakers: 3
+  dedupe_tiou: 0.7
+  recap_scan_lines: 12
+  recap_similarity: 0.85
+  recap_prev_tail_lines: 15
+  recap_fallback_s: 5
+  penalties: { possible_recap: 0.5, reaction_cut: 0.25, montage: 0.25 }
 intensity:
   weights: { exclamations: 1.0, questions: 0.5, all_caps_words: 0.5,
              strong_emotion: 2.0, sfx: 1.5, action_violence_shock: 2.0,

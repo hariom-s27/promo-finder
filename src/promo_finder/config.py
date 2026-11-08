@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, model_validator
@@ -71,6 +71,49 @@ class PricingCfg(BaseModel):
     description: str = "list price, Global Standard"
 
 
+class PurposeCfg(BaseModel):
+    reasoning_effort: str
+
+
+class RateLimitCfg(BaseModel):
+    max_concurrent: int = Field(default=1, ge=1)
+    # Old configurations keep their previous pacing; production values live in YAML.
+    min_interval_s: float = Field(default=0, ge=0, allow_inf_nan=False)
+    honour_retry_after: bool = True
+    max_retry_after_s: float = Field(default=60, gt=0, le=60, allow_inf_nan=False)
+
+
+class SpoilerCfg(BaseModel):
+    reveal_mode: Literal["block", "flag"] = "block"
+    late_series_start: int = Field(default=46, ge=1)
+
+
+class PenaltiesCfg(BaseModel):
+    possible_recap: float = Field(default=0.5, ge=0, allow_inf_nan=False)
+    reaction_cut: float = Field(default=0.25, ge=0, allow_inf_nan=False)
+    montage: float = Field(default=0.25, ge=0, allow_inf_nan=False)
+
+
+class BuilderCfg(BaseModel):
+    max_per_episode: int = Field(default=8, ge=1)
+    max_segments: int = Field(default=2, ge=1, le=2)
+    montage_first_min_s: float = Field(default=8, gt=0, allow_inf_nan=False)
+    montage_first_max_s: float = Field(default=20, gt=0, allow_inf_nan=False)
+    max_speakers: int = Field(default=3, ge=1)
+    dedupe_tiou: float = Field(default=0.7, ge=0, le=1, allow_inf_nan=False)
+    recap_scan_lines: int = Field(default=12, ge=1)
+    recap_similarity: float = Field(default=0.85, ge=0, le=1, allow_inf_nan=False)
+    recap_prev_tail_lines: int = Field(default=15, ge=1)
+    recap_fallback_s: float = Field(default=5, ge=0, allow_inf_nan=False)
+    penalties: PenaltiesCfg = Field(default_factory=PenaltiesCfg)
+
+    @model_validator(mode="after")
+    def _bounds(self) -> "BuilderCfg":
+        if self.montage_first_min_s > self.montage_first_max_s:
+            raise ValueError("montage first-piece bounds are inconsistent")
+        return self
+
+
 class ModelCfg(BaseModel):
     provider: str
     model: str
@@ -112,6 +155,10 @@ class Config(BaseModel):
     intensity: IntensityCfg = Field(default_factory=IntensityCfg)
     understanding: UnderstandingCfg = Field(default_factory=UnderstandingCfg)
     pricing: dict[str, PricingCfg] = Field(default_factory=dict)
+    purposes: dict[str, PurposeCfg] = Field(default_factory=dict)
+    rate_limit: RateLimitCfg = Field(default_factory=RateLimitCfg)
+    spoiler: SpoilerCfg = Field(default_factory=SpoilerCfg)
+    builder: BuilderCfg = Field(default_factory=BuilderCfg)
 
     _root: Path = PrivateAttr(default=PROJECT_ROOT)
 
@@ -121,6 +168,8 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def _check(self) -> "Config":
+        if self.builder.montage_first_max_s > self.promo.max_s:
+            raise ValueError("montage first-piece maximum exceeds promo maximum")
         for name, m in self.models.items():
             if m.provider not in self.providers:
                 raise ValueError(f"model '{name}' uses unknown provider '{m.provider}'")

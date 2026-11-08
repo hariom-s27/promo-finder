@@ -28,3 +28,22 @@ def test_what_trim_and_empty_marks(episode_factory):
         "confidence": "medium", "what": " ".join(["invented"] * 14)}]}, episode)
     assert len(marks[0]["what"].split()) == 12 and checks["trims_by_field"]["what"] == 1
     assert reveals.clean({"marks": []}, episode)[0] == []
+
+
+def test_v2_prompt_empty_allowed_and_purpose_effort(write_config, episode_factory):
+    from promo_finder.config import PurposeCfg, load_config
+    from promo_finder.header import LIMITS
+    from test_llm import make_client, resp
+    cfg = load_config(write_config())
+    cfg.purposes["reveals"] = PurposeCfg(reasoning_effort="low")
+    episode = episode_factory(5, [(0, 1000)])
+    client, fake, _, _ = make_client(cfg, [resp('{"marks": []}')])
+    result = reveals.build(episode, {key: "invented" for key in LIMITS}, {"characters": []}, cfg, client,
+                           purpose_prefix="p03")
+    assert result["marks"] == [] and result["metadata"]["version"] == 2
+    prompt = fake.calls[0]["messages"][0]["content"]
+    for required in ("Read every scene.", "an empty list is allowed if there truly are none", "hidden identity, lie",
+                     "to the viewer", "an apology accepted", "E99-L001 = reveal; E99-L002 = resolution"):
+        assert required in prompt
+    assert "Return at least" not in prompt and "minimum count" not in prompt
+    assert fake.calls[0]["reasoning_effort"] == "low"

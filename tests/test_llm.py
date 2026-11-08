@@ -320,7 +320,7 @@ def test_call_log_has_hash_not_prompt_or_key(cfg):
     c.call("fake_a", MSGS, SCHEMA, purpose="unit")
     raw = (cfg.root / "outputs" / "logs" / "llm_calls.jsonl").read_text(encoding="utf-8")
     assert "invented prompt text" not in raw and "fake-key-value-not-real" not in raw
-    recs = read_log(cfg)
+    recs = [row for row in read_log(cfg) if row.get("event") != "http_attempt_started"]
     assert len(recs) == 2 and [r["cached"] for r in recs] == [False, True]
     for r in recs:
         for k in ("time", "purpose", "provider", "model_string", "prompt_sha256",
@@ -360,3 +360,140 @@ def test_secrets_file_loaded_with_override(write_config, monkeypatch, tmp_path):
     assert load_secrets(cfg) == f
     import os
     assert os.environ["FAKE_API_KEY"] == "from-file-value"
+
+
+def test_effort_override_changes_cache_key_and_preserves_default(cfg):
+    c, fake, _, _ = make_client(cfg, [resp('{"ok": true}')] * 3)
+    default = c.call("fake_a", MSGS, SCHEMA, purpose="t")
+    low = c.call("fake_a", MSGS, SCHEMA, purpose="t", reasoning_effort="low")
+    assert default.cache_key != low.cache_key
+    assert c.call("fake_a", MSGS, SCHEMA, purpose="t", reasoning_effort="low").cached
+    c.call("fake_a", MSGS, SCHEMA, purpose="t", no_cache=True)
+    assert [row["reasoning_effort"] for row in fake.calls] == ["minimal", "low", "minimal"]
+    assert cfg.models["fake_a"].params["reasoning_effort"] == "minimal"
+
+
+def test_spacing_across_calls_and_retry(cfg):
+    cfg.rate_limit.min_interval_s = 1.5
+    c, fake, clock, _ = make_client(cfg, [http_error(openai.RateLimitError, 429, {"retry-after": "0.25"}),
+                                         resp('{"ok": true}'), resp('{"ok": true}')])
+    starts = []
+    original = fake._create
+    def timed(**kwargs):
+        starts.append(clock())
+        return original(**kwargs)
+    fake.chat.completions.create = timed
+    c.call("fake_a", MSGS, SCHEMA, purpose="t")
+    c.call("fake_a", MSGS, SCHEMA, purpose="t", no_cache=True)
+    assert starts == [1000, 1001.5, 1003]
+    assert c.calls_made == 3
+    assert sum(clock.sleeps) == pytest.approx(3)
+
+
+@pytest.mark.parametrize("header,expected", [
+    ({"retry-after": "60"}, 60), ({"retry-after": "60.01"}, 1),
+    ({"retry-after": "0"}, 1), ({"retry-after": "-1"}, 1),
+    ({"retry-after": "nan"}, 1), ({"retry-after": "inf"}, 1),
+    ({"retry-after": "invalid"}, 1), ({}, 1),
+    ({"retry-after-ms": "1500"}, 1.5), ({"retry-after-ms": "60000"}, 60),
+    ({"retry-after-ms": "60001"}, 1), ({"retry-after-ms": "0"}, 1),
+    ({"retry-after-ms": "2000", "retry-after": "9"}, 2),
+])
+def test_bounded_retry_after(cfg, header, expected):
+    c, _, clock, _ = make_client(cfg, [http_error(openai.RateLimitError, 429, header), resp('{"ok": true}')])
+    c.call("fake_a", MSGS, SCHEMA, purpose="t")
+    assert clock.sleeps == [expected]
+    assert c.calls_made == 2
+
+
+def test_retry_after_config_bound_and_disable(cfg):
+    cfg.rate_limit.max_retry_after_s = 3
+    c, _, clock, _ = make_client(cfg, [http_error(openai.RateLimitError, 429, {"retry-after": "4"}), resp('{"ok": true}')])
+    c.call("fake_a", MSGS, SCHEMA, purpose="t")
+    assert clock.sleeps == [1]
+    cfg.rate_limit.honour_retry_after = False
+    c, _, clock, _ = make_client(cfg, [http_error(openai.RateLimitError, 429, {"retry-after": "2"}), resp('{"ok": true}')])
+    c.call("fake_a", MSGS, SCHEMA, purpose="t", no_cache=True)
+    assert clock.sleeps == [1]
+
+
+@pytest.mark.parametrize("offset,expected", [(7, 7), (61, 1), (-2, 1)])
+def test_retry_after_http_date(cfg, monkeypatch, offset, expected):
+    from email.utils import formatdate
+    monkeypatch.setattr("promo_finder.llm.time.time", lambda: 1700000000)
+    c, _, clock, _ = make_client(cfg, [http_error(openai.RateLimitError, 429,
+        {"Retry-After": formatdate(1700000000 + offset, usegmt=True)}), resp('{"ok": true}')])
+    c.call("fake_a", MSGS, SCHEMA, purpose="t")
+    assert clock.sleeps == [expected]
+
+
+def test_spacing_shared_by_models_and_azure_paths(cfg):
+    cfg.rate_limit.min_interval_s = 1.5
+    clock = FakeClock()
+    starts = []
+    v1 = FakeProvider([http_error(openai.NotFoundError, 404)])
+    fallback = FakeProvider([resp('{"ok": true}')])
+    def factory(provider, pcfg, mode):
+        fake = {"v1": v1, "fallback": fallback}[mode]
+        original = fake.chat.completions.create
+        def timed(**kw):
+            starts.append(clock())
+            return original(**kw)
+        fake.chat.completions.create = timed
+        return fake
+    c = LLMClient(cfg, client_factory=factory, clock=clock, sleep=clock.sleep, token_estimator=lambda text: 1)
+    c.call("fake_az", MSGS, SCHEMA, purpose="t")
+    assert starts == [1000, 1001.5] and c.calls_made == 2
+    c, _, clock, _ = make_client(cfg, [resp('{"ok": true}')] * 2)
+    c.call("fake_a", MSGS, SCHEMA, purpose="t")
+    c.call("fake_b", MSGS, SCHEMA, purpose="t")
+    assert clock.sleeps == [1.5]
+
+
+def test_provider_concurrency_is_bounded(cfg):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    cfg.rate_limit.max_concurrent = 1
+    entered, release, second_started = threading.Event(), threading.Event(), threading.Event()
+    lock = threading.Lock()
+    active = maximum = 0
+    def create(**kw):
+        nonlocal active, maximum
+        with lock:
+            active += 1
+            maximum = max(maximum, active)
+        entered.set()
+        assert release.wait(5)
+        with lock:
+            active -= 1
+        return resp('{"ok": true}')
+    fake = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    c = LLMClient(cfg, client_factory=lambda *args: fake, token_estimator=lambda text: 1)
+    def second():
+        second_started.set()
+        return c.call("fake_a", [{"role": "user", "content": "invented second"}], SCHEMA, purpose="t")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(c.call, "fake_a", MSGS, SCHEMA, purpose="t")
+        assert entered.wait(5)
+        other = executor.submit(second)
+        assert second_started.wait(5)
+        release.set()
+        assert first.result().data == other.result().data == {"ok": True}
+    assert maximum == 1 and c.calls_made == 2
+
+
+@pytest.mark.parametrize("patch", [
+    {"rate_limit": {"max_concurrent": 0}}, {"rate_limit": {"min_interval_s": -1}},
+    {"rate_limit": {"max_retry_after_s": 61}}, {"spoiler": {"reveal_mode": "invalid"}},
+    {"builder": {"max_per_episode": 0}}, {"builder": {"max_segments": 3}},
+    {"builder": {"montage_first_min_s": 21, "montage_first_max_s": 20}},
+    {"builder": {"penalties": {"montage": -1}}}, {"builder": {"recap_similarity": 1.1}},
+])
+def test_invalid_p03_config(write_config, patch):
+    import yaml
+    path = write_config()
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw.update(patch)
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(path)

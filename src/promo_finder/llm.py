@@ -20,7 +20,9 @@ import math
 import os
 import re
 import time
+import threading
 from collections import deque
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -219,13 +221,18 @@ def _parse_json(text: str) -> Any:
 def _retry_after_s(exc: Exception) -> Optional[float]:
     resp = getattr(exc, "response", None)
     headers = getattr(resp, "headers", None) or {}
-    try:
-        if headers.get("retry-after-ms"):
-            return float(headers["retry-after-ms"]) / 1000.0
-        if headers.get("retry-after"):
-            return float(headers["retry-after"])
-    except (TypeError, ValueError):
-        return None
+    for name, scale in (("retry-after-ms", 0.001), ("retry-after", 1.0)):
+        value = headers.get(name)
+        if value is None:
+            continue
+        try:
+            return float(value) * scale
+        except (TypeError, ValueError):
+            if name == "retry-after":
+                try:
+                    return parsedate_to_datetime(value).timestamp() - time.time()
+                except (TypeError, ValueError, OverflowError):
+                    pass
     return None
 
 
@@ -235,10 +242,13 @@ class RateLimiter:
 
     def __init__(self, rpm: Optional[int] = None, tpm: Optional[int] = None,
                  clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep,
-                 window: float = 60.0):
+                 window: float = 60.0, min_interval_s: float = 0.0):
         self.rpm, self.tpm, self.window = rpm, tpm, window
         self.clock, self.sleep = clock, sleep
         self.events: deque[list] = deque()  # [timestamp, tokens]
+        self.min_interval_s = min_interval_s
+        self.last_start: Optional[float] = None
+        self.lock = threading.Lock()
 
     def _purge(self, now: float) -> None:
         while self.events and self.events[0][0] <= now - self.window:
@@ -248,6 +258,8 @@ class RateLimiter:
         now = self.clock() if now is None else now
         self._purge(now)
         waits = [0.0]
+        if self.last_start is not None:
+            waits.append(self.last_start + self.min_interval_s - now)
         ev = list(self.events)
         if self.rpm and len(ev) >= self.rpm:
             waits.append(ev[len(ev) - self.rpm][0] + self.window - now)
@@ -265,14 +277,16 @@ class RateLimiter:
         return max(waits)
 
     def acquire(self, tokens: int) -> list:
-        while True:
-            w = self.wait_time(tokens)
-            if w <= 0:
-                break
-            self.sleep(w)
-        entry = [self.clock(), tokens]
-        self.events.append(entry)
-        return entry
+        with self.lock:
+            while True:
+                w = self.wait_time(tokens)
+                if w <= 0:
+                    break
+                self.sleep(w)
+            entry = [self.clock(), tokens]
+            self.last_start = entry[0]
+            self.events.append(entry)
+            return entry
 
     @staticmethod
     def settle(entry: list, actual_tokens: int) -> None:
@@ -313,14 +327,18 @@ class LLMClient:
         self.estimate = token_estimator
         self.calls_made = 0
         self.records: list[dict] = []  # metadata only, for per-run accounting
-        self.limiters = {n: RateLimiter(p.rpm, p.tpm, clock=clock, sleep=sleep)
+        self.limiters = {n: RateLimiter(p.rpm, p.tpm, clock=clock, sleep=sleep,
+                                      min_interval_s=self.cfg.rate_limit.min_interval_s)
                          for n, p in self.cfg.providers.items()}
+        self._slots = {n: threading.BoundedSemaphore(self.cfg.rate_limit.max_concurrent)
+                       for n in self.cfg.providers}
+        self._budget_lock = threading.Lock()
         self._clients: dict[tuple, Any] = {}
         self.azure_path: dict[str, str] = {}  # provider -> path that worked
 
     # ---------------- public
     def call(self, model_key: str, messages: list, json_schema: dict, *, purpose: str,
-             no_cache: bool = False) -> LLMResult:
+             no_cache: bool = False, reasoning_effort: Optional[str] = None) -> LLMResult:
         m = self.cfg.models.get(model_key)
         if m is None:
             raise LLMError(f"unknown model key '{model_key}'")
@@ -329,6 +347,8 @@ class LLMClient:
         p = self.cfg.providers[m.provider]
         schema = to_strict(json_schema)
         params = dict(m.params)
+        if reasoning_effort is not None:
+            params["reasoning_effort"] = reasoning_effort
         if m.family.lower() == "openai":
             params.pop("temperature", None)  # gpt-5 rule: never send temperature
         key = cache_key(m.provider, m.model, params, messages, schema)
@@ -370,7 +390,7 @@ class LLMClient:
             rec = {**base_log, "model_string": None, "input_tokens": None, "output_tokens": None,
                    "cached": False, "error": None, "api_path": None}
             try:
-                resp, path = self._send(m, p, messages, schema, send, est_in, base_log)
+                resp, path, request_number = self._send(m, p, messages, schema, send, est_in, base_log)
             except LLMError as e:
                 self._log({**rec, "latency_ms": int((self.clock() - t0) * 1000), "error": e.code})
                 raise
@@ -382,7 +402,7 @@ class LLMClient:
                 raise ProviderError(self._scrub(f"{type(e).__name__}: {e}")) from None
             latency = int((self.clock() - t0) * 1000)
             text, finish, model_string, usage = self._extract(resp)
-            rec.update(request_number=self.calls_made, model_string=model_string, input_tokens=usage.input_tokens,
+            rec.update(request_number=request_number, model_string=model_string, input_tokens=usage.input_tokens,
                        output_tokens=usage.output_tokens, latency_ms=latency, api_path=path)
 
             if not text.strip() or finish == "length":
@@ -432,23 +452,34 @@ class LLMClient:
         for i, path in enumerate(paths):
             client = self._client(m.provider, p, path)
 
-            def request():
-                if self.calls_made >= self.cfg.max_calls_per_run:
-                    raise BudgetExceeded(f"max_calls_per_run={self.cfg.max_calls_per_run} reached")
+            def physical_request():
+                with self._budget_lock:
+                    if self.calls_made >= self.cfg.max_calls_per_run:
+                        raise BudgetExceeded(f"max_calls_per_run={self.cfg.max_calls_per_run} reached")
                 entry = limiter.acquire(est_in)
-                self.calls_made += 1
+                with self._budget_lock:
+                    if self.calls_made >= self.cfg.max_calls_per_run:
+                        raise BudgetExceeded(f"max_calls_per_run={self.cfg.max_calls_per_run} reached")
+                    self.calls_made += 1
+                    number = self.calls_made
+                self._log({**base_log, "event": "http_attempt_started", "api_path": path,
+                           "request_number": number, "cached": False})
                 try:
                     response = client.chat.completions.create(**kwargs)
                 except Exception as exc:
                     status = getattr(exc, "status_code", None)
                     self._log({**base_log, "event": "http_attempt_failed", "api_path": path,
-                               "request_number": self.calls_made, "cached": False,
+                               "request_number": number, "cached": False,
                                "error": f"HTTP_{status}" if status else type(exc).__name__})
                     raise
                 usage = getattr(response, "usage", None)
                 actual = int(getattr(usage, "prompt_tokens", 0) or 0) + int(getattr(usage, "completion_tokens", 0) or 0)
                 limiter.settle(entry, actual or est_in)
-                return response
+                return response, number
+
+            def request():
+                with self._slots[m.provider]:
+                    return physical_request()
 
             def retry(attempt, wait):
                 self._log({**base_log, "event": "transport_retry", "api_path": path,
@@ -456,7 +487,7 @@ class LLMClient:
                            "wait_s": wait})
 
             try:
-                resp = self._with_backoff(request, on_retry=retry)
+                resp, number = self._with_backoff(request, on_retry=retry)
             except (openai.APIStatusError, openai.APIConnectionError) as e:
                 if i + 1 < len(paths):
                     status = getattr(e, "status_code", type(e).__name__)
@@ -468,7 +499,7 @@ class LLMClient:
                 self.azure_path[m.provider] = path
                 self._log({"purpose": "azure_path", "provider": m.provider, "model_key": None,
                            "event": f"azure path in use: {path}"})
-            return resp, path
+            return resp, path, number
         raise ProviderError("no API path available")  # pragma: no cover
 
     def _with_backoff(self, fn, on_retry=None):
@@ -478,8 +509,9 @@ class LLMClient:
             except openai.RateLimitError as e:
                 if attempt == MAX_TRIES - 1:
                     raise
-                wait = _retry_after_s(e)
-                wait = 2.0 ** attempt if wait is None else wait
+                wait = _retry_after_s(e) if self.cfg.rate_limit.honour_retry_after else None
+                if wait is None or not (0 < wait <= self.cfg.rate_limit.max_retry_after_s):
+                    wait = 2.0 ** attempt
             except openai.APIStatusError as e:
                 if e.status_code < 500 or attempt == MAX_TRIES - 1:
                     raise
@@ -543,9 +575,11 @@ class LLMClient:
 _default: Optional[LLMClient] = None
 
 
-def call(model_key: str, messages: list, json_schema: dict, *, purpose: str, no_cache: bool = False) -> LLMResult:
+def call(model_key: str, messages: list, json_schema: dict, *, purpose: str, no_cache: bool = False,
+         reasoning_effort: Optional[str] = None) -> LLMResult:
     """Module-level entry point using a lazily created default client."""
     global _default
     if _default is None:
         _default = LLMClient()
-    return _default.call(model_key, messages, json_schema, purpose=purpose, no_cache=no_cache)
+    return _default.call(model_key, messages, json_schema, purpose=purpose, no_cache=no_cache,
+                         reasoning_effort=reasoning_effort)

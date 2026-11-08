@@ -12,6 +12,25 @@ from .llm import LLMClient
 from .models import Episode
 from .understanding_common import DATA_RULE, array, compact, enum, metadata, obj, trim, validate, words
 
+SYSTEM = DATA_RULE + """
+
+Identify reveal and resolution lines in this episode.
+
+Reveal = a secret, hidden identity, lie or hidden fact becomes known to a character or to the viewer.
+
+Resolution = a conflict is settled inside the episode (an apology accepted, a rescue completed, a truth admitted, a threat removed, a decision made).
+
+Read every scene. Most microdrama episodes contain at least one such line, but return only real ones; an empty list is allowed if there truly are none.
+
+Return only line IDs from this episode's allowed enum. Never return timestamps. Each what field: max 12 words.
+
+One invented example:
+E99-L001 | dialogue | Zavi | | I hid the map.
+E99-L002 | dialogue | Pell | | Your apology is accepted.
+Example marks: E99-L001 = reveal; E99-L002 = resolution.
+The example is invented and is not episode data. Use only the current episode's allowed IDs.
+""".rstrip()
+
 
 def schema(episode: Episode) -> dict:
     return obj({"marks": array(obj({
@@ -25,9 +44,7 @@ def messages(episode: Episode, header: dict, sheet: dict) -> list[dict]:
     context = {"show_header": fields(header),
                "character_roles": [{"speaker_label": char["speaker_label"], "role": char["role"]}
                                    for char in sheet["characters"]]}
-    return [{"role": "system", "content": DATA_RULE + " Mark a reveal when a secret or hidden fact comes out, "
-             "and a resolution when a conflict is settled. Return only real line IDs from this episode. "
-             "Do not force marks when neither event occurs. Each what field: max 12 words."},
+    return [{"role": "system", "content": SYSTEM},
             {"role": "user", "content": json.dumps(context, ensure_ascii=False) + "\n" + compact([episode])}]
 
 
@@ -51,6 +68,8 @@ def clean(data: dict, episode: Episode) -> tuple[list[dict], dict]:
     duplicates = 0
     confidence = {"low": 0, "medium": 1, "high": 2}
     for mark in data["marks"]:
+        # Disk-cache JSON sorts keys. Restore schema order for stable downstream prompts.
+        mark = {field: mark[field] for field in ("line_id", "type", "confidence", "what")}
         mark["what"] = trim(mark["what"], 12, "what", trims)
         key = mark["line_id"], mark["type"]
         previous = result.get(key)
@@ -63,11 +82,13 @@ def clean(data: dict, episode: Episode) -> tuple[list[dict], dict]:
 
 
 def build(episode: Episode, header: dict, sheet: dict, cfg: Config,
-          client: LLMClient, no_cache: bool = False) -> dict:
+          client: LLMClient, no_cache: bool = False, *, purpose_prefix: str = "p02") -> dict:
+    purpose = cfg.purposes.get("reveals")
     result = client.call(cfg.active.picker, messages(episode, header, sheet), schema(episode),
-                         purpose=f"p02.reveals.E{episode.ep:02d}", no_cache=no_cache)
+                         purpose=f"{purpose_prefix}.reveals.E{episode.ep:02d}", no_cache=no_cache,
+                         reasoning_effort=purpose.reasoning_effort if purpose else None)
     marks, checks = clean(result.data, episode)
     trims = Counter(checks.pop("trims_by_field"))
     return {"episode": episode.ep, "marks": marks,
             "counts_by_type": {kind: sum(mark["type"] == kind for mark in marks) for kind in ("reveal", "resolution")},
-            "metadata": metadata(result, trims, **checks)}
+            "metadata": metadata(result, trims, version=2, **checks)}
