@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import inspect
+import ast
+import hashlib
 import json
 import re
-import subprocess
 
 import pytest
 
@@ -83,12 +83,18 @@ def test_round_robin_retains_original_rank_gaps():
     assert [(r["episode"], r["within_episode_rank"]) for r in result] == [(9,1), (10,1), (10,2), (9,3)]
 
 
+# fingerprint of snap_to_lines at bf9ffce, the last commit before P07 (D67, D85); structure only, ignores formatting/line endings
+SNAP_TO_LINES_FINGERPRINT = "6a94ae85406cee257a5b3d32ebf8963e58ad3e6e5a20c6cac6e196f9eca7b986"
+
+
 def test_old_snap_function_source_unchanged():
     from pathlib import Path
     project = Path(__file__).resolve().parents[1]
-    original = subprocess.run(["git", "show", "HEAD:src/promo_finder/checker.py"], cwd=project, capture_output=True, text=True, check=True).stdout
-    original_function = original[original.index("def snap_to_lines("):].strip()
-    assert inspect.getsource(checker.snap_to_lines).strip() == original_function
+    source = (project / "src/promo_finder/checker.py").read_text(encoding="utf-8")
+    node = next(node for node in ast.parse(source).body
+                if isinstance(node, ast.FunctionDef) and node.name == "snap_to_lines")
+    fingerprint = hashlib.sha256(ast.dump(node, include_attributes=False).encode("utf-8")).hexdigest()
+    assert fingerprint == SNAP_TO_LINES_FINGERPRINT
 
 
 @pytest.mark.parametrize("command", ["run", "baseline", "understand", "find", "build", "judge", "rank"])
