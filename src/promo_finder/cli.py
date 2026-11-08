@@ -247,6 +247,13 @@ def main(argv: list[str] | None = None) -> int:
     eg.add_argument("--xlsx", default="outputs/labelling/gold_labelling.xlsx")
     eg.add_argument("--out", default="eval/gold.csv")
     eg.add_argument("--data-dir", help="override data_dir")
+    from .understanding import DEV_SPEC, cmd_understand
+
+    understand = sub.add_parser("understand", help="build understanding for requested episodes (DEV by default)")
+    understand.add_argument("--eps", default=DEV_SPEC)
+    understand.add_argument("--dry-run", action="store_true", help="estimate calls/tokens/cost without AI calls")
+    understand.add_argument("--allow-held-out", action="store_true", help="explicitly override the held-out seal")
+    understand.add_argument("--no-cache", action="store_true", help="bypass the LLM cache")
     args = ap.parse_args(argv)
     try:
         cfg = load_config()
@@ -254,5 +261,5 @@ def main(argv: list[str] | None = None) -> int:
         print(f"config error: {e}", file=sys.stderr)
         return 2
     cmds = {"parse": cmd_parse, "ping": cmd_ping, "list-lines": cmd_list_lines, "check-gold": cmd_check_gold,
-            "make-workbook": cmd_make_workbook, "export-gold": cmd_export_gold}
+            "make-workbook": cmd_make_workbook, "export-gold": cmd_export_gold, "understand": cmd_understand}
     return cmds[args.cmd](cfg, args)

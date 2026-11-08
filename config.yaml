@@ -5,6 +5,17 @@ secrets_file: ".env"        # inside promo-finder; env var KUKU_SECRETS_FILE ove
 max_calls_per_run: 50
 promo: { min_s: 20, max_s: 60, max_segments: 3 }
 active: { picker: azure_mini, judge: groq_qwen }        # switch model = edit one line
+understanding: { character_chunk_episodes: 4 }
+intensity:
+  weights: { exclamations: 1.0, questions: 0.5, all_caps_words: 0.5,
+             strong_emotion: 2.0, sfx: 1.5, action_violence_shock: 2.0,
+             speaker_change: 0.5, short_dialogue: 1.0 }
+  strong_emotions: [angry, furious, screaming, shocked, terrified, crying, desperate]
+  action_terms: [slap, punch, kick, stab, shoot, strangle, choke, beat, "drag by hair",
+                 shove, "throw acid", "set on fire", burn, "run over", falling, scream, screaming]
+pricing:
+  azure_mini: { input_per_million_usd: 0.25, output_per_million_usd: 2.00,
+                source: RESEARCH, description: "list price, Global Standard" }
 models:
   groq_oss:     { provider: groq,  model: "openai/gpt-oss-120b", family: openai,
                   params: { reasoning_effort: low, include_reasoning: false, max_completion_tokens: 4000 } }

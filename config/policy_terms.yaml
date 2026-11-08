@@ -1,0 +1,25 @@
+categories:
+  violence: [slap, punch, kick, stab, shoot, strangle, choke, beat, "drag by hair", shove,
+             "throw acid", "set on fire", burn, "run over", blood, bleeding, wound, gash,
+             bruise, corpse, dead, unconscious, knife, gun, pistol, bat, "broken bottle",
+             acid, gasoline, lighter, rope, explosion, "car crash", accident, fire, falling,
+             miscarriage, "slow motion", "blood splatters", "i'll kill you", "you're dead"]
+  sexual: [undress, unbuttons, strips, "takes off", "towel drops", underwear, lingerie,
+           naked, shirtless, bedsheets, "morning after", moan, "heavy breathing",
+           straddles, "on top of", grinding]
+  nonconsent_abuse: [drugged, "spiked her drink", "out cold", "pinned down", "forced kiss",
+                     "let go of me", rape, assault, molest, "no one will hear you"]
+  self_harm: ["kill myself", "end it", "i'll jump", "goodbye forever", rooftop, ledge,
+              pills, overdose, wrist, noose, poison]
+  minors: ["high school", freshman, "school uniform", kid, child, teen, daughter, son]
+  profanity: [bastard, slut, whore, fuck, fucks, fucked, fucking, fucker, motherfucker,
+              shit, shitty, bullshit, bitch, bitches]
+  shock_fear: [scream, screaming, gore, "you are in danger"]
+combos:
+  sexual:
+    left: [kiss]
+    right: [passionate, deep, tongue, long, hungry, "lying down", "on the bed",
+            "against the wall", undressed]
+  nonconsent_abuse:
+    left: [husband, boyfriend, fiancé, fiance]
+    right: [slap, hit, choke]

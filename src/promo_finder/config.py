@@ -37,6 +37,40 @@ class ActiveCfg(BaseModel):
     judge: str
 
 
+class IntensityCfg(BaseModel):
+    weights: dict[str, float] = Field(default_factory=lambda: {
+        "exclamations": 1.0, "questions": 0.5, "all_caps_words": 0.5,
+        "strong_emotion": 2.0, "sfx": 1.5, "action_violence_shock": 2.0,
+        "speaker_change": 0.5, "short_dialogue": 1.0,
+    })
+    strong_emotions: list[str] = Field(default_factory=lambda: [
+        "angry", "furious", "screaming", "shocked", "terrified", "crying", "desperate",
+    ])
+    action_terms: list[str] = Field(default_factory=lambda: [
+        "slap", "punch", "kick", "stab", "shoot", "strangle", "choke", "beat",
+        "drag by hair", "shove", "throw acid", "set on fire", "burn", "run over",
+        "falling", "scream", "screaming",
+    ])
+
+    @model_validator(mode="after")
+    def _weights(self) -> "IntensityCfg":
+        expected = set(type(self).model_fields["weights"].default_factory())
+        if set(self.weights) != expected or any(v < 0 for v in self.weights.values()):
+            raise ValueError("intensity weights must include each feature and be nonnegative")
+        return self
+
+
+class UnderstandingCfg(BaseModel):
+    character_chunk_episodes: int = Field(default=4, ge=1)
+
+
+class PricingCfg(BaseModel):
+    input_per_million_usd: float = Field(ge=0)
+    output_per_million_usd: float = Field(ge=0)
+    source: str = "RESEARCH"
+    description: str = "list price, Global Standard"
+
+
 class ModelCfg(BaseModel):
     provider: str
     model: str
@@ -75,6 +109,9 @@ class Config(BaseModel):
     active: ActiveCfg
     models: dict[str, ModelCfg]
     providers: dict[str, ProviderCfg]
+    intensity: IntensityCfg = Field(default_factory=IntensityCfg)
+    understanding: UnderstandingCfg = Field(default_factory=UnderstandingCfg)
+    pricing: dict[str, PricingCfg] = Field(default_factory=dict)
 
     _root: Path = PrivateAttr(default=PROJECT_ROOT)
 

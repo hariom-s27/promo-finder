@@ -1,0 +1,16 @@
+# Standing rules
+- Workspace: D:\sem_iitk\sem9\kuku; write only inside promo-finder.
+- Never open, read, print, or search the real .env; keys only via application code.
+- Set TEMP and TMP inside promo-finder/.cache/tmp for every command.
+- Every pytest invocation uses a new unique --basetemp under .cache/tmp.
+- Leave .cache/pytest-tmp untouched.
+- Never copy script text, dialogue, or real character names into code, tests, reports, console, or commits.
+- AI text belongs only in git-ignored outputs/understanding/; inspect counts only.
+- Never commit data/, outputs/, .cache/, .env, eval/gold*.csv, or *.xlsx.
+- Run python tools/guard.py before every commit.
+- eval/match_rule.md, eval/gold_rubric.md, eval/gold_template.csv: never edited.
+- eval/HASHES.md is append-only: only Hariom adds rows via tools/hash_eval.py; agents never edit it.
+- Held-out episodes: 1-4, 11-14, 26-29, 42-45; no understanding tool output before P08.
+- Preserve prior parsed/labelling artifacts; never pass --allow-held-out in P02.
+- Workflow: PLAN -> wait for APPROVED -> IMPLEMENT -> STOP before live AI calls and before commit.
+- REPORT in logs/P##_report.md; never push; if unclear, ask.

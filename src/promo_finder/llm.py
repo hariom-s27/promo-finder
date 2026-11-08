@@ -312,6 +312,7 @@ class LLMClient:
         self.dry_run = dry_run
         self.estimate = token_estimator
         self.calls_made = 0
+        self.records: list[dict] = []  # metadata only, for per-run accounting
         self.limiters = {n: RateLimiter(p.rpm, p.tpm, clock=clock, sleep=sleep)
                          for n, p in self.cfg.providers.items()}
         self._clients: dict[tuple, Any] = {}
@@ -369,7 +370,7 @@ class LLMClient:
             rec = {**base_log, "model_string": None, "input_tokens": None, "output_tokens": None,
                    "cached": False, "error": None, "api_path": None}
             try:
-                resp, path = self._send(m, p, messages, schema, send, est_in)
+                resp, path = self._send(m, p, messages, schema, send, est_in, base_log)
             except LLMError as e:
                 self._log({**rec, "latency_ms": int((self.clock() - t0) * 1000), "error": e.code})
                 raise
@@ -381,7 +382,7 @@ class LLMClient:
                 raise ProviderError(self._scrub(f"{type(e).__name__}: {e}")) from None
             latency = int((self.clock() - t0) * 1000)
             text, finish, model_string, usage = self._extract(resp)
-            rec.update(model_string=model_string, input_tokens=usage.input_tokens,
+            rec.update(request_number=self.calls_made, model_string=model_string, input_tokens=usage.input_tokens,
                        output_tokens=usage.output_tokens, latency_ms=latency, api_path=path)
 
             if not text.strip() or finish == "length":
@@ -410,7 +411,7 @@ class LLMClient:
             return LLMResult(data=data, raw_text=text, model_string=model_string, usage=usage,
                              cached=False, latency_ms=latency, cache_key=key, api_path=path)
 
-    def _send(self, m: ModelCfg, p: ProviderCfg, messages, schema, send_params, est_in):
+    def _send(self, m: ModelCfg, p: ProviderCfg, messages, schema, send_params, est_in, base_log):
         kwargs: dict[str, Any] = {
             "model": m.model,
             "messages": messages,
@@ -429,13 +430,33 @@ class LLMClient:
             paths = [None]
         limiter = self.limiters[m.provider]
         for i, path in enumerate(paths):
-            if self.calls_made >= self.cfg.max_calls_per_run:
-                raise BudgetExceeded(f"max_calls_per_run={self.cfg.max_calls_per_run} reached")
-            self.calls_made += 1
             client = self._client(m.provider, p, path)
-            entry = limiter.acquire(est_in)
+
+            def request():
+                if self.calls_made >= self.cfg.max_calls_per_run:
+                    raise BudgetExceeded(f"max_calls_per_run={self.cfg.max_calls_per_run} reached")
+                entry = limiter.acquire(est_in)
+                self.calls_made += 1
+                try:
+                    response = client.chat.completions.create(**kwargs)
+                except Exception as exc:
+                    status = getattr(exc, "status_code", None)
+                    self._log({**base_log, "event": "http_attempt_failed", "api_path": path,
+                               "request_number": self.calls_made, "cached": False,
+                               "error": f"HTTP_{status}" if status else type(exc).__name__})
+                    raise
+                usage = getattr(response, "usage", None)
+                actual = int(getattr(usage, "prompt_tokens", 0) or 0) + int(getattr(usage, "completion_tokens", 0) or 0)
+                limiter.settle(entry, actual or est_in)
+                return response
+
+            def retry(attempt, wait):
+                self._log({**base_log, "event": "transport_retry", "api_path": path,
+                           "request_number": self.calls_made, "retry_index": attempt,
+                           "wait_s": wait})
+
             try:
-                resp = self._with_backoff(lambda: client.chat.completions.create(**kwargs))
+                resp = self._with_backoff(request, on_retry=retry)
             except (openai.APIStatusError, openai.APIConnectionError) as e:
                 if i + 1 < len(paths):
                     status = getattr(e, "status_code", type(e).__name__)
@@ -443,8 +464,6 @@ class LLMClient:
                                "event": f"v1 failed ({status}); trying fallback api_version"})
                     continue
                 raise
-            u = getattr(resp, "usage", None)
-            limiter.settle(entry, int(getattr(u, "prompt_tokens", 0) or 0) + int(getattr(u, "completion_tokens", 0) or 0) or est_in)
             if p.is_azure and m.provider not in self.azure_path:
                 self.azure_path[m.provider] = path
                 self._log({"purpose": "azure_path", "provider": m.provider, "model_key": None,
@@ -452,7 +471,7 @@ class LLMClient:
             return resp, path
         raise ProviderError("no API path available")  # pragma: no cover
 
-    def _with_backoff(self, fn):
+    def _with_backoff(self, fn, on_retry=None):
         for attempt in range(MAX_TRIES):
             try:
                 return fn()
@@ -469,7 +488,10 @@ class LLMClient:
                 if attempt == MAX_TRIES - 1:
                     raise
                 wait = 2.0 ** attempt
-            self.sleep(min(max(wait, 0.0), MAX_WAIT_S))
+            wait = min(max(wait, 0.0), MAX_WAIT_S)
+            if on_retry is not None:
+                on_retry(attempt + 1, wait)
+            self.sleep(wait)
         raise ProviderError("retries exhausted")  # pragma: no cover
 
     def _client(self, provider: str, p: ProviderCfg, path: Optional[str]):
@@ -513,6 +535,7 @@ class LLMClient:
     def _log(self, rec: dict) -> None:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         rec = {"time": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), **rec}
+        self.records.append(rec)
         with self.log_path.open("a", encoding="utf-8") as fh:
             fh.write(_dumps(rec) + "\n")
 

@@ -280,6 +280,40 @@ def test_dry_run_makes_no_calls(cfg):
     assert r.dry_run and r.usage.input_tokens > 0 and fake.calls == []
 
 
+def test_transport_retries_count_toward_budget(write_config, monkeypatch):
+    monkeypatch.setenv("FAKE_API_KEY", "fake-key-value-not-real")
+    cfg = load_config(write_config(max_calls=2))
+    c, fake, _, _ = make_client(cfg, [http_error(openai.RateLimitError, 429),
+                                     http_error(openai.InternalServerError, 500), resp('{"ok": true}')])
+    with pytest.raises(BudgetExceeded):
+        c.call("fake_a", MSGS, SCHEMA, purpose="p02.characters.chunk_01")
+    assert len(fake.calls) == c.calls_made == 2
+    failed = [row for row in c.records if row.get("event") == "http_attempt_failed"]
+    assert [row["request_number"] for row in failed] == [1, 2]
+    assert all(row["purpose"] == "p02.characters.chunk_01" for row in failed)
+    assert len([row for row in c.records if row.get("event") == "transport_retry"]) == 2
+    assert all("fake-key-value-not-real" not in json.dumps(row) for row in c.records)
+
+
+def test_successful_transport_retry_has_exact_physical_count(cfg):
+    c, fake, _, _ = make_client(cfg, [http_error(openai.RateLimitError, 429), resp('{"ok": true}')])
+    c.call("fake_a", MSGS, SCHEMA, purpose="p02.header")
+    assert len(fake.calls) == c.calls_made == 2
+    assert c.records[-1]["request_number"] == 2
+
+
+def test_retry_summary_counts_transport_and_rejected_response_usage(cfg):
+    from promo_finder.understanding import call_summary
+
+    c, _, _, _ = make_client(cfg, [http_error(openai.RateLimitError, 429),
+                                  resp('{"ok": "invalid"}'), resp('{"ok": true}')])
+    c.call("fake_a", MSGS, SCHEMA, purpose="p02.header")
+    part = call_summary(c, cfg)["parts"]["header"]
+    assert part["calls"] == 1 and part["requests"] == 3 and part["retries"] == 2
+    assert part["http_failures"] == 1 and part["response_failures"] == 1 and part["failed_calls"] == 0
+    assert part["input_tokens"] == 22 and part["output_tokens"] == 6
+
+
 def test_call_log_has_hash_not_prompt_or_key(cfg):
     c, _, _, _ = make_client(cfg, [resp('{"ok": true}')])
     c.call("fake_a", MSGS, SCHEMA, purpose="unit")
