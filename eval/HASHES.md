@@ -11,3 +11,5 @@ Frozen BEFORE any gold label exists. A changed file = a new version + a new DECI
 | outputs/ai_labels/claude_v1.csv | fafdcc025d1154deed6571e5efa7d724d880933266d3eb4650f713942b7c7acb | 3170 | 2026-11-08T02:06:08Z |  |
 | outputs/ai_labels/gpt_v1.csv | 9229fa4625a4740fdb313184110084dce9f89e8e8d83e0f5ff9f00feb3c08573 | 3167 | 2026-11-08T02:06:08Z |  |
 | config/score_formula.yaml | 8f76ddf50855441a2b9dfc1e60b7f4f0db3cca308a8a37f22c7f25374b5638f3 | 2203 | 2026-11-08T05:29:10Z |  |
+| config/eval_order.yaml | 71d0a4042e95ec90a5ec509f28eac447721d3e951ecb0259cb376520db734ab8 | 941 | 2026-11-08T16:56:30Z | frozen P07 config |
+| config/baseline.yaml | 57ccd891e430926d0b2bc2766b4488759a32f3408def2bfdab684b8e37ca7cef | 1546 | 2026-11-08T16:56:30Z | frozen P07 config |
