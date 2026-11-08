@@ -1,0 +1,777 @@
+{
+  "label": "result",
+  "scoring_runs": 1,
+  "statement": "n = 16 positives; all results are descriptive (match rule \u00a75, \u00a78)",
+  "definitions": {
+    "tIoU": "sum_e |P_e \u2229 G_e| / sum_e |P_e \u222a G_e|, exact ms, per episode (match rule \u00a72)",
+    "matching": "greedy by rank i=1..K; p_i takes unmatched gold with highest tIoU >= tau; ties lowest gold_id (\u00a74)",
+    "recall_at_K": "matched gold / |G| at tau; K = 2|G| = 32; Wilson 95% (z=1.959964) (\u00a75)",
+    "hook_hit": "gold matched at tau 0.5 AND matched prediction's FIRST segment in the same episode as gold's FIRST segment AND |delta start| <= 2000 ms; share of |G| (\u00a75)",
+    "hook_found": "greedy one-to-one by rank over top K on the hook test alone (any tIoU); each prediction takes the unmatched gold with smallest |delta start|, ties lowest gold_id; share of |G|; diagnostic (\u00a75)",
+    "precision_at_10": "tau-0.5 matches among positions 1-10 of L / min(10, |L|) (\u00a75)",
+    "recall_by_grade": "Recall@K at tau 0.5 split by gold grade 3/2/1; descriptive (\u00a75)",
+    "negative_hit_rate": "share of negatives with tIoU >= 0.5 against ANY top-K prediction, not one-to-one (\u00a75)",
+    "mcnemar": "exact two-sided binomial test on discordant pairs of a_i (tool matched gold i) vs b_i (baseline matched gold i), tau 0.5 (\u00a75)",
+    "bootstrap": "paired bootstrap of mean(a-b), B=10000, random.Random(12345).choices, percentile 95% (numpy linear) (\u00a75)",
+    "baseline_sensitivity": "baseline list with the 20-60 s check off (P07b sensitivity_promos, held-out only, stored order) (\u00a76)",
+    "s_no_funnel_row": "tool L in frozen sensitivity_order_S_no_funnel (held-out only, stored order), verified against re-implementation (D62)",
+    "longlist_top10": "EXPLORATORY: of tool top 10, how many reach tIoU >= 0.5 with ANY long-list positive (D46)",
+    "label_agreement": "positives only; global greedy by highest tIoU (ties lower A gold_id, lower B row), one-to-one; F1 = 2*matched/(|A|+|B|); among tau-0.5 pairs: hook within 2 s (same first-segment episode), Cohen kappa hook_type and cliff_type, linear weighted kappa on grade, raw agreement beside each (D43)"
+  },
+  "counts": {
+    "G": 16,
+    "negatives": 6,
+    "K": 32,
+    "tool_L": 55,
+    "baseline_L": 45,
+    "baseline_sensitivity_L": 52,
+    "longlist_positives": 44
+  },
+  "tool": {
+    "L_size": 55,
+    "K_used": 32,
+    "G_size": 16,
+    "recall_at_K": {
+      "k": 3,
+      "n": 16,
+      "value": 0.1875,
+      "wilson95": [
+        0.06591599019788683,
+        0.4300888116754912
+      ]
+    },
+    "hook_hit": {
+      "k": 1,
+      "n": 16,
+      "value": 0.0625,
+      "wilson95": [
+        0.011119344641247308,
+        0.283287377981482
+      ]
+    },
+    "hook_found": {
+      "k": 2,
+      "n": 16,
+      "value": 0.125,
+      "wilson95": [
+        0.03497748742626902,
+        0.36022827482178466
+      ]
+    },
+    "precision_at_10": {
+      "k": 1,
+      "n": 10,
+      "value": 0.1
+    },
+    "negative_hit_rate": {
+      "k": 0,
+      "n": 6,
+      "value": 0.0,
+      "wilson95": [
+        0.0,
+        0.39033429165637346
+      ]
+    },
+    "recall_by_grade": {
+      "3": {
+        "k": 3,
+        "n": 15,
+        "value": 0.2,
+        "wilson95": [
+          0.0704754929173392,
+          0.45185448924055305
+        ]
+      },
+      "2": {
+        "k": 0,
+        "n": 1,
+        "value": 0.0,
+        "wilson95": [
+          0.0,
+          0.7934506882081973
+        ]
+      },
+      "1": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "wilson95": "n/a (n=0)"
+      }
+    },
+    "recall_at_K_by_tau": {
+      "0.5": {
+        "k": 3,
+        "n": 16,
+        "value": 0.1875,
+        "wilson95": [
+          0.06591599019788683,
+          0.4300888116754912
+        ]
+      },
+      "0.3": {
+        "k": 5,
+        "n": 16,
+        "value": 0.3125,
+        "wilson95": [
+          0.14164643765150897,
+          0.5559564434725178
+        ]
+      },
+      "0.7": {
+        "k": 1,
+        "n": 16,
+        "value": 0.0625,
+        "wilson95": [
+          0.011119344641247308,
+          0.283287377981482
+        ]
+      }
+    },
+    "precision_at_10_by_tau": {
+      "0.5": {
+        "k": 1,
+        "n": 10,
+        "value": 0.1
+      },
+      "0.3": {
+        "k": 2,
+        "n": 10,
+        "value": 0.2
+      },
+      "0.7": {
+        "k": 0,
+        "n": 10,
+        "value": 0.0
+      }
+    }
+  },
+  "baseline": {
+    "L_size": 45,
+    "K_used": 32,
+    "G_size": 16,
+    "recall_at_K": {
+      "k": 6,
+      "n": 16,
+      "value": 0.375,
+      "wilson95": [
+        0.18481232451546453,
+        0.6135895962338866
+      ]
+    },
+    "hook_hit": {
+      "k": 0,
+      "n": 16,
+      "value": 0.0,
+      "wilson95": [
+        0.0,
+        0.1936076829974049
+      ]
+    },
+    "hook_found": {
+      "k": 0,
+      "n": 16,
+      "value": 0.0,
+      "wilson95": [
+        0.0,
+        0.1936076829974049
+      ]
+    },
+    "precision_at_10": {
+      "k": 3,
+      "n": 10,
+      "value": 0.3
+    },
+    "negative_hit_rate": {
+      "k": 5,
+      "n": 6,
+      "value": 0.8333333333333334,
+      "wilson95": [
+        0.4364971749742326,
+        0.969946630588185
+      ]
+    },
+    "recall_by_grade": {
+      "3": {
+        "k": 6,
+        "n": 15,
+        "value": 0.4,
+        "wilson95": [
+          0.19824496026274246,
+          0.6425317004565552
+        ]
+      },
+      "2": {
+        "k": 0,
+        "n": 1,
+        "value": 0.0,
+        "wilson95": [
+          0.0,
+          0.7934506882081973
+        ]
+      },
+      "1": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "wilson95": "n/a (n=0)"
+      }
+    },
+    "recall_at_K_by_tau": {
+      "0.5": {
+        "k": 6,
+        "n": 16,
+        "value": 0.375,
+        "wilson95": [
+          0.18481232451546453,
+          0.6135895962338866
+        ]
+      },
+      "0.3": {
+        "k": 9,
+        "n": 16,
+        "value": 0.5625,
+        "wilson95": [
+          0.3317855624393811,
+          0.7690134771859434
+        ]
+      },
+      "0.7": {
+        "k": 4,
+        "n": 16,
+        "value": 0.25,
+        "wilson95": [
+          0.10182067420167085,
+          0.4949831672970316
+        ]
+      }
+    },
+    "precision_at_10_by_tau": {
+      "0.5": {
+        "k": 3,
+        "n": 10,
+        "value": 0.3
+      },
+      "0.3": {
+        "k": 5,
+        "n": 10,
+        "value": 0.5
+      },
+      "0.7": {
+        "k": 2,
+        "n": 10,
+        "value": 0.2
+      }
+    }
+  },
+  "baseline_sensitivity_no_20_60": {
+    "L_size": 52,
+    "K_used": 32,
+    "G_size": 16,
+    "recall_at_K": {
+      "k": 6,
+      "n": 16,
+      "value": 0.375,
+      "wilson95": [
+        0.18481232451546453,
+        0.6135895962338866
+      ]
+    },
+    "hook_hit": {
+      "k": 0,
+      "n": 16,
+      "value": 0.0,
+      "wilson95": [
+        0.0,
+        0.1936076829974049
+      ]
+    },
+    "hook_found": {
+      "k": 0,
+      "n": 16,
+      "value": 0.0,
+      "wilson95": [
+        0.0,
+        0.1936076829974049
+      ]
+    },
+    "precision_at_10": {
+      "k": 3,
+      "n": 10,
+      "value": 0.3
+    },
+    "negative_hit_rate": {
+      "k": 4,
+      "n": 6,
+      "value": 0.6666666666666666,
+      "wilson95": [
+        0.29999331299474324,
+        0.9032285897864654
+      ]
+    },
+    "recall_by_grade": {
+      "3": {
+        "k": 6,
+        "n": 15,
+        "value": 0.4,
+        "wilson95": [
+          0.19824496026274246,
+          0.6425317004565552
+        ]
+      },
+      "2": {
+        "k": 0,
+        "n": 1,
+        "value": 0.0,
+        "wilson95": [
+          0.0,
+          0.7934506882081973
+        ]
+      },
+      "1": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "wilson95": "n/a (n=0)"
+      }
+    },
+    "recall_at_K_by_tau": {
+      "0.5": {
+        "k": 6,
+        "n": 16,
+        "value": 0.375,
+        "wilson95": [
+          0.18481232451546453,
+          0.6135895962338866
+        ]
+      },
+      "0.3": {
+        "k": 9,
+        "n": 16,
+        "value": 0.5625,
+        "wilson95": [
+          0.3317855624393811,
+          0.7690134771859434
+        ]
+      },
+      "0.7": {
+        "k": 4,
+        "n": 16,
+        "value": 0.25,
+        "wilson95": [
+          0.10182067420167085,
+          0.4949831672970316
+        ]
+      }
+    },
+    "precision_at_10_by_tau": {
+      "0.5": {
+        "k": 3,
+        "n": 10,
+        "value": 0.3
+      },
+      "0.3": {
+        "k": 5,
+        "n": 10,
+        "value": 0.5
+      },
+      "0.7": {
+        "k": 2,
+        "n": 10,
+        "value": 0.2
+      }
+    }
+  },
+  "tool_s_no_funnel_order": {
+    "L_size": 55,
+    "K_used": 32,
+    "G_size": 16,
+    "recall_at_K": {
+      "k": 4,
+      "n": 16,
+      "value": 0.25,
+      "wilson95": [
+        0.10182067420167085,
+        0.4949831672970316
+      ]
+    },
+    "hook_hit": {
+      "k": 2,
+      "n": 16,
+      "value": 0.125,
+      "wilson95": [
+        0.03497748742626902,
+        0.36022827482178466
+      ]
+    },
+    "hook_found": {
+      "k": 3,
+      "n": 16,
+      "value": 0.1875,
+      "wilson95": [
+        0.06591599019788683,
+        0.4300888116754912
+      ]
+    },
+    "precision_at_10": {
+      "k": 1,
+      "n": 10,
+      "value": 0.1
+    },
+    "negative_hit_rate": {
+      "k": 0,
+      "n": 6,
+      "value": 0.0,
+      "wilson95": [
+        0.0,
+        0.39033429165637346
+      ]
+    },
+    "recall_by_grade": {
+      "3": {
+        "k": 4,
+        "n": 15,
+        "value": 0.26666666666666666,
+        "wilson95": [
+          0.1089745324961737,
+          0.5195043425155202
+        ]
+      },
+      "2": {
+        "k": 0,
+        "n": 1,
+        "value": 0.0,
+        "wilson95": [
+          0.0,
+          0.7934506882081973
+        ]
+      },
+      "1": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "wilson95": "n/a (n=0)"
+      }
+    },
+    "recall_at_K_by_tau": {
+      "0.5": {
+        "k": 4,
+        "n": 16,
+        "value": 0.25,
+        "wilson95": [
+          0.10182067420167085,
+          0.4949831672970316
+        ]
+      },
+      "0.3": {
+        "k": 6,
+        "n": 16,
+        "value": 0.375,
+        "wilson95": [
+          0.18481232451546453,
+          0.6135895962338866
+        ]
+      },
+      "0.7": {
+        "k": 2,
+        "n": 16,
+        "value": 0.125,
+        "wilson95": [
+          0.03497748742626902,
+          0.36022827482178466
+        ]
+      }
+    },
+    "precision_at_10_by_tau": {
+      "0.5": {
+        "k": 1,
+        "n": 10,
+        "value": 0.1
+      },
+      "0.3": {
+        "k": 2,
+        "n": 10,
+        "value": 0.2
+      },
+      "0.7": {
+        "k": 0,
+        "n": 10,
+        "value": 0.0
+      }
+    }
+  },
+  "paired_tool_vs_baseline": {
+    "n": 16,
+    "mcnemar": {
+      "tool_only": 2,
+      "baseline_only": 5,
+      "discordant": 7,
+      "p_two_sided": 0.453125
+    },
+    "bootstrap": {
+      "mean_diff": -0.1875,
+      "ci95": [
+        -0.5,
+        0.125
+      ],
+      "B": 10000,
+      "seed": 12345,
+      "n": 16
+    }
+  },
+  "exploratory_longlist_top10": {
+    "k": 5,
+    "n": 10,
+    "label": "EXPLORATORY (D46)"
+  },
+  "label_agreement": {
+    "gold_vs_claude_v1": {
+      "n_A": 16,
+      "n_B": 16,
+      "match_f1": {
+        "0.5": {
+          "matched": 9,
+          "f1": 0.5625
+        },
+        "0.3": {
+          "matched": 9,
+          "f1": 0.5625
+        },
+        "0.7": {
+          "matched": 6,
+          "f1": 0.375
+        }
+      },
+      "at_tau_0.5": {
+        "n_pairs": 9,
+        "pairs": [
+          [
+            "C08",
+            "C03",
+            0.98917
+          ],
+          [
+            "C02",
+            "C01",
+            0.954122
+          ],
+          [
+            "B01",
+            "B01",
+            0.911602
+          ],
+          [
+            "D12",
+            "D02",
+            0.845475
+          ],
+          [
+            "A11",
+            "A03",
+            0.785933
+          ],
+          [
+            "D23",
+            "D04",
+            0.70582
+          ],
+          [
+            "B05",
+            "B03",
+            0.684783
+          ],
+          [
+            "A02",
+            "A01",
+            0.644483
+          ],
+          [
+            "D16",
+            "D03",
+            0.52193
+          ]
+        ],
+        "hook_within_2s": {
+          "k": 2,
+          "n": 9,
+          "raw_agreement": 0.2222222222222222
+        },
+        "hook_type": {
+          "n": 9,
+          "raw_agreement": 0.3333333333333333,
+          "kappa": 0.1692307692307692
+        },
+        "cliff_type": {
+          "n": 9,
+          "raw_agreement": 0.7777777777777778,
+          "kappa": 0.735294117647059
+        },
+        "grade": {
+          "n": 9,
+          "raw_agreement": 0.6666666666666666,
+          "kappa": -0.17391304347825998
+        }
+      }
+    },
+    "gold_vs_gpt_v1": {
+      "n_A": 16,
+      "n_B": 16,
+      "match_f1": {
+        "0.5": {
+          "matched": 5,
+          "f1": 0.3125
+        },
+        "0.3": {
+          "matched": 6,
+          "f1": 0.375
+        },
+        "0.7": {
+          "matched": 1,
+          "f1": 0.0625
+        }
+      },
+      "at_tau_0.5": {
+        "n_pairs": 5,
+        "pairs": [
+          [
+            "D12",
+            "D02",
+            0.722367
+          ],
+          [
+            "B05",
+            "B03",
+            0.684783
+          ],
+          [
+            "A11",
+            "A03",
+            0.620915
+          ],
+          [
+            "A17",
+            "A04",
+            0.618529
+          ],
+          [
+            "A07",
+            "A02",
+            0.542141
+          ]
+        ],
+        "hook_within_2s": {
+          "k": 2,
+          "n": 5,
+          "raw_agreement": 0.4
+        },
+        "hook_type": {
+          "n": 5,
+          "raw_agreement": 0.4,
+          "kappa": 0.21052631578947364
+        },
+        "cliff_type": {
+          "n": 5,
+          "raw_agreement": 0.4,
+          "kappa": 0.3478260869565218
+        },
+        "grade": {
+          "n": 5,
+          "raw_agreement": 0.8,
+          "kappa": 0.0
+        }
+      }
+    },
+    "claude_v1_vs_gpt_v1": {
+      "n_A": 16,
+      "n_B": 16,
+      "match_f1": {
+        "0.5": {
+          "matched": 7,
+          "f1": 0.4375
+        },
+        "0.3": {
+          "matched": 9,
+          "f1": 0.5625
+        },
+        "0.7": {
+          "matched": 6,
+          "f1": 0.375
+        }
+      },
+      "at_tau_0.5": {
+        "n_pairs": 7,
+        "pairs": [
+          [
+            "B03",
+            "B03",
+            1.0
+          ],
+          [
+            "B04",
+            "B04",
+            1.0
+          ],
+          [
+            "C04",
+            "C03",
+            0.990099
+          ],
+          [
+            "B02",
+            "B01",
+            0.976471
+          ],
+          [
+            "D01",
+            "D01",
+            0.762238
+          ],
+          [
+            "A03",
+            "A03",
+            0.730887
+          ],
+          [
+            "D02",
+            "D02",
+            0.610743
+          ]
+        ],
+        "hook_within_2s": {
+          "k": 4,
+          "n": 7,
+          "raw_agreement": 0.5714285714285714
+        },
+        "hook_type": {
+          "n": 7,
+          "raw_agreement": 0.7142857142857143,
+          "kappa": 0.5333333333333333
+        },
+        "cliff_type": {
+          "n": 7,
+          "raw_agreement": 0.7142857142857143,
+          "kappa": 0.6410256410256411
+        },
+        "grade": {
+          "n": 7,
+          "raw_agreement": 0.42857142857142855,
+          "kappa": 3.8857805861880464e-16
+        }
+      }
+    }
+  },
+  "matched_gold_ids_tau_0.5": {
+    "tool": [
+      "A07",
+      "B05",
+      "D16"
+    ],
+    "baseline": [
+      "A17",
+      "B05",
+      "B08",
+      "C02",
+      "C08",
+      "D07"
+    ]
+  }
+}
