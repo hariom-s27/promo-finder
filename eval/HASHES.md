@@ -13,3 +13,5 @@ Frozen BEFORE any gold label exists. A changed file = a new version + a new DECI
 | config/score_formula.yaml | 8f76ddf50855441a2b9dfc1e60b7f4f0db3cca308a8a37f22c7f25374b5638f3 | 2203 | 2026-11-08T05:29:10Z |  |
 | config/eval_order.yaml | 71d0a4042e95ec90a5ec509f28eac447721d3e951ecb0259cb376520db734ab8 | 941 | 2026-11-08T16:56:30Z | frozen P07 config |
 | config/baseline.yaml | 57ccd891e430926d0b2bc2766b4488759a32f3408def2bfdab684b8e37ca7cef | 1546 | 2026-11-08T16:56:30Z | frozen P07 config |
+| config/v2.yaml | e09761554e5407f6d2b9a815c15f136942124b874fa048c192c221c058ece2f5 | 766 | 2026-11-09T01:07:47Z | v2 overlay F2+F5b (D97) |
+| eval/match_rule_fresh.md | ba2a39d027a25ee19ea96a7517a44e637373a0efd05945ec04c34e843e6a884a | 3015 | 2026-11-09T01:07:48Z | fresh-set match rule (D94c) |
