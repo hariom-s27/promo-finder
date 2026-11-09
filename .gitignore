@@ -13,6 +13,8 @@ eval/gold_fresh*.csv
 .env
 *.env
 .env.*
+.streamlit/secrets.toml
+**/top_promos_by_episode.md
 
 # python
 .venv/

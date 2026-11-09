@@ -48,7 +48,7 @@ def dry_run(cfg: Config, episodes: list[Episode], allow_held_out: bool = False, 
     completion = int(cfg.models[cfg.active.picker].params.get("max_completion_tokens", 0))
     if completion <= 0:
         raise UnderstandingError("picker needs a positive completion token limit")
-    if cfg.active.picker not in cfg.pricing:
+    if cfg.active.picker not in cfg.pricing and not cfg.free_demo:
         raise UnderstandingError("picker pricing is required for preflight")
     def estimate(messages, schema):
         return estimate_tokens(_prompt_text(messages, to_strict(schema)))
@@ -76,7 +76,7 @@ def dry_run(cfg: Config, episodes: list[Episode], allow_held_out: bool = False, 
             "estimated_input_tokens": inputs, "output_budget_tokens": outputs,
             "estimated_cost_usd": cost_usd(cfg, inputs, outputs),
             "estimate_basis": "known inputs plus reveal completion allowance for hints; output caps; excludes retries",
-            "pricing": cfg.pricing[cfg.active.picker].model_dump()}
+            "pricing": cfg.pricing[cfg.active.picker].model_dump() if cfg.active.picker in cfg.pricing else None}
 
 
 def call_summary(client: LLMClient, cfg: Config, start: int = 0) -> dict:
@@ -170,7 +170,7 @@ def run(cfg: Config, episodes: list[Episode], *, client: LLMClient | None = None
         raise
     finally:
         summary["llm"] = call_summary(client, cfg, start)
-        summary["pricing"] = cfg.pricing[cfg.active.picker].model_dump()
+        summary["pricing"] = cfg.pricing[cfg.active.picker].model_dump() if cfg.active.picker in cfg.pricing else None
         write_json(cfg.output_root / "moments/find_summary.json", summary)
     return summary
 

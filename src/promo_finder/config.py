@@ -218,6 +218,12 @@ class Config(BaseModel):
     _config_path: Optional[Path] = PrivateAttr(default=None)
     _overlay_path: Optional[Path] = PrivateAttr(default=None)
     _run_name: str = PrivateAttr(default="dev")
+    _free_demo: bool = PrivateAttr(default=False)
+
+    @property
+    def free_demo(self) -> bool:
+        """Only an explicit free-role overlay enables the non-evaluation demo."""
+        return self._free_demo
 
     @property
     def root(self) -> Path:
@@ -277,9 +283,11 @@ def model_quota(cfg: Config, model_key: str) -> dict:
             "effective_tpm": provider.tpm, "effective_rpm": provider.rpm}
 
 
-# An overlay may only set these keys: no prompt, schema, model, judge, temperature or other setting can change.
-OVERLAY_TOP_KEYS = ("version", "builder")
+# Role selection may change; model definitions, prompts, temperatures and scoring may not.
+OVERLAY_TOP_KEYS = ("version", "builder", "active", "understanding", "purposes")
 OVERLAY_BUILDER_KEYS = ("too_short_mode", "resolution_mode")
+OVERLAY_ACTIVE_KEYS = ("picker", "judge")
+FREE_ROLES = {"picker": "groq_oss", "judge": "groq_qwen"}
 
 
 def read_overlay(path: Path) -> dict:
@@ -299,6 +307,29 @@ def read_overlay(path: Path) -> dict:
     bad = sorted(str(k) for k in set(builder) - set(OVERLAY_BUILDER_KEYS))
     if bad:
         raise ConfigError("overlay builder key not allowed: " + ", ".join(bad))
+    active = raw.get("active", {})
+    if not isinstance(active, dict):
+        raise ConfigError("overlay active section must be a mapping")
+    bad = sorted(str(k) for k in set(active) - set(OVERLAY_ACTIVE_KEYS))
+    if bad:
+        raise ConfigError("overlay active key not allowed: " + ", ".join(bad))
+    if any(not isinstance(v, str) for v in active.values()):
+        raise ConfigError("overlay active values must be model keys")
+    if "understanding" in raw:
+        section = raw["understanding"]
+        if (active != FREE_ROLES or not isinstance(section, dict)
+                or set(section) != {"character_chunk_episodes"}
+                or type(section["character_chunk_episodes"]) is not int
+                or section["character_chunk_episodes"] != 1):
+            raise ConfigError("only the free-role overlay may set singleton character batching")
+    if "purposes" in raw:
+        section = raw["purposes"]
+        if (active != FREE_ROLES or not isinstance(section, dict) or set(section) != {"answer_key"}
+                or not isinstance(section["answer_key"], dict)
+                or set(section["answer_key"]) != {"max_completion_tokens"}
+                or type(section["answer_key"]["max_completion_tokens"]) is not int
+                or section["answer_key"]["max_completion_tokens"] != 4500):
+            raise ConfigError("only the free-role overlay may set the approved answer-key cap")
     if "version" in raw and (isinstance(raw["version"], bool) or not isinstance(raw["version"], int)):
         raise ConfigError("overlay version must be an integer")
     return raw
@@ -331,6 +362,14 @@ def load_config(path: Optional[Path | str] = None, overlay: Optional[Path | str]
         if not isinstance(base, dict):
             raise ConfigError("config builder section must be a mapping")
         raw["builder"] = {**base, **patch.get("builder", {})}
+        if "active" in patch:
+            raw["active"] = {**raw.get("active", {}), **patch["active"]}
+        if "understanding" in patch:
+            raw["understanding"] = {**raw.get("understanding", {}), **patch["understanding"]}
+        if "purposes" in patch:
+            purposes = dict(raw.get("purposes", {}))
+            purposes["answer_key"] = {**purposes.get("answer_key", {}), **patch["purposes"]["answer_key"]}
+            raw["purposes"] = purposes
     try:
         cfg = Config.model_validate(raw)
     except ValidationError as e:
@@ -340,6 +379,10 @@ def load_config(path: Optional[Path | str] = None, overlay: Optional[Path | str]
     cfg._root = root
     cfg._config_path = p.resolve()
     cfg._overlay_path = overlay_path
+    cfg._free_demo = bool(overlay_path and patch.get("active") == FREE_ROLES
+                          and all(cfg.models[k].provider == "groq" for k in FREE_ROLES.values()))
+    if overlay_path and ("understanding" in patch or "purposes" in patch) and not cfg.free_demo:
+        raise ConfigError("free-only settings require the Groq free path")
     if not cfg.data_dir.is_absolute():
         cfg.data_dir = (root / cfg.data_dir).resolve()
     return cfg
@@ -354,7 +397,9 @@ def secrets_path(cfg: Config) -> Path:
 def required_key_names(cfg: Config) -> list[str]:
     """Env var NAMES needed by every non-TBD model's provider."""
     names: list[str] = []
-    for m in cfg.usable_models().values():
+    models = ([cfg.models[key] for key in (cfg.active.picker, cfg.active.judge)]
+              if cfg.free_demo else cfg.usable_models().values())
+    for m in models:
         for n in cfg.providers[m.provider].env_names():
             if n not in names:
                 names.append(n)

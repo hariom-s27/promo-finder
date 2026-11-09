@@ -1,0 +1,11 @@
+# Small Groq demo; comparison baseline is skipped. This is not an evaluation.
+active:
+  picker: groq_oss
+  judge: groq_qwen
+# D100 a: free overlay only; official v1/v2 batching remains unchanged.
+understanding:
+  character_chunk_episodes: 1
+# D104 a: no other completion cap changes.
+purposes:
+  answer_key:
+    max_completion_tokens: 4500

@@ -7,7 +7,7 @@ import math
 import sys
 import time
 
-from . import baseline, builder, finding, header, judge_prompts, judging, moments, ranking, understanding
+from . import baseline, builder, characters, finding, header, judge_prompts, judging, moments, ranking, understanding
 from .accounting import summarize
 from .budget import check as daily_check
 from .checker import build_index, check_promo
@@ -19,6 +19,12 @@ from .run_context import fingerprints, manifest
 from .understanding_common import UnderstandingError, write_json
 
 ORDER = ("understand", "find", "build", "judge", "rank", "baseline", "snap/check")
+
+
+def stage_order(cfg):
+    return tuple(name for name in ORDER if not (cfg.free_demo and name == "baseline"))
+
+
 GUARD_PING_MESSAGES = [{"role": "user", "content": "Return only JSON with ok set to true."}]
 GUARD_PING_PURPOSE = "p07.guard_refresh_ping"
 
@@ -135,7 +141,8 @@ def dry_run(cfg, episodes, *, allow_held_out=False):
         parts["guard_refresh_ping"] = {"calls": 1, "known_input_tokens": ping_tokens, "dependency_allowance_tokens": 0,
                                        "output_budget_tokens": ping_cap, "provider": judge_provider, "model_key": judge}
         reservations.insert(0, ping_tokens + ping_cap)
-    parts["baseline"] = baseline.dry_run(cfg, episodes, allow_held_out=allow_held_out)
+    if not cfg.free_demo:
+        parts["baseline"] = baseline.dry_run(cfg, episodes, allow_held_out=allow_held_out)
     for part in ("build", "rank", "snap/check"):
         parts[part] = {"calls": 0, "known_input_tokens": 0, "dependency_allowance_tokens": 0,
                        "output_budget_tokens": 0, "provider": "code", "model_key": None}
@@ -149,7 +156,7 @@ def dry_run(cfg, episodes, *, allow_held_out=False):
             total[key] = None if total[key] is None or row[key] is None else total[key] + row[key]
     calls = sum(p["calls"] for p in parts.values())
     groq_calls = providers.get("groq", {}).get("calls", 0)
-    return {"dry_run": True, "episodes": [e.ep for e in episodes], "run": cfg.run_name, "order": list(ORDER),
+    result = {"dry_run": True, "episodes": [e.ep for e in episodes], "run": cfg.run_name, "order": list(stage_order(cfg)),
             "parts": parts, "providers": providers, "planned_calls": calls, "max_calls_per_run": math.ceil(calls * 1.2),
             "planned_by_episode": planned_by_ep, "daily_guard": daily_check(cfg, groq_calls),
             "estimated_groq_time_s": pacing(cfg, reservations) if judge_provider == "groq" else 0,
@@ -157,6 +164,90 @@ def dry_run(cfg, episodes, *, allow_held_out=False):
             "time_basis": "rolling request and input-plus-output reservations; excludes provider latency, retries and upstream Azure work",
             "estimate_basis": "candidate ceilings; full-episode cold-input upper bounds; dependency output caps; offline len/4 tokens; excludes latency/retries",
             **fingerprints(cfg, required=True)}
+    if cfg.free_demo:
+        result["comparison_baseline"] = "skipped: free demo, not evaluation"
+        result["models"] = {key: {"calls": sum(p["calls"] for p in parts.values() if p["model_key"] == key),
+                                   "estimated_input_tokens": sum(p["estimated_input_tokens"] for p in parts.values() if p["model_key"] == key),
+                                   "output_budget_tokens": sum(p["output_budget_tokens"] for p in parts.values() if p["model_key"] == key)}
+                            for key in (picker, judge)}
+        tpm = model_quota(cfg, picker)["effective_tpm"]
+        checks = []
+        for group in chunks(episodes, cfg.understanding.character_chunk_episodes):
+            tokens = estimate_tokens(_prompt_text(characters.messages(group), to_strict(characters.schema(group))))
+            checks.append({"stage": "characters", "episodes": [e.ep for e in group],
+                           "estimated_input_tokens": tokens, "output_budget_tokens": cap,
+                           "reserved_tokens": tokens + cap, "configured_tpm": tpm,
+                           "fits": tpm is None or tokens + cap <= tpm})
+        result["known_picker_request_checks"] = checks
+        result["known_picker_requests_fit"] = all(row["fits"] for row in checks)
+        result["request_checks"] = free_request_checks(cfg, episodes, parts, empty_header, empty_sheet, context_allowance)
+        result["largest_request_upper_bound"] = max(result["request_checks"], key=lambda row: row["reserved_tokens"])
+        result["largest_base_request"] = max(result["request_checks"], key=lambda row: row["base_reserved_tokens"])
+        result["all_request_upper_bounds_fit"] = all(row["fits"] for row in result["request_checks"])
+        result["free_limits"] = {"rpm_per_model": 30, "rpd_per_model": 1000,
+                                  "tpm_per_model": 8000, "tpd_per_model": 200000,
+                                  "basis": "user supplied D100; remaining account quota not observed"}
+        for model in result["models"].values():
+            model["total_token_budget"] = model["estimated_input_tokens"] + model["output_budget_tokens"]
+            model["daily_token_limit"] = 200000
+            model["within_daily_token_limit"] = model["total_token_budget"] <= 200000
+    return result
+
+
+def free_request_checks(cfg, episodes, parts, empty_header, empty_sheet, context_allowance):
+    """Per-request estimates, keeping unknown generated context explicit; demo only."""
+    rows = []
+    picker, judge = cfg.active.picker, cfg.active.judge
+
+    def tokens(messages, schema, model):
+        schema = to_strict(schema)
+        if cfg.models[model].structured_output == "json_object":
+            return estimate_tokens(_prompt_text(json_messages(messages, schema), {}))
+        return estimate_tokens(_prompt_text(messages, schema))
+
+    def add(stage, model, known, allowance, output, episode_numbers, calls=1, basis="known prompt plus generated-context allowance"):
+        if not calls:
+            return
+        tpm = model_quota(cfg, model)["effective_tpm"]
+        rows.append({"stage": stage, "model_key": model, "episodes": episode_numbers, "calls": calls,
+                     "known_input_tokens": known, "dependency_allowance_tokens": allowance,
+                     "output_budget_tokens": output, "base_reserved_tokens": known + output,
+                     "reserved_tokens": known + allowance + output, "configured_tpm": tpm,
+                     "fits": tpm is None or known + allowance + output <= tpm, "basis": basis})
+
+    cap = int(cfg.models[picker].params["max_completion_tokens"])
+    for group in chunks(episodes, cfg.understanding.character_chunk_episodes):
+        add("characters", picker, tokens(characters.messages(group), characters.schema(group), picker), 0,
+            cap, [e.ep for e in group], basis="known prompt and configured output cap")
+    add("header", picker, parts["header"]["known_input_tokens"], parts["header"]["dependency_allowance_tokens"],
+        cap, [e.ep for e in episodes])
+    for episode in episodes:
+        add("reveals", picker, tokens(understanding.reveals.messages(episode, empty_header, empty_sheet),
+                                     understanding.reveals.schema(episode), picker),
+            parts["reveals"]["dependency_allowance_tokens"] // len(episodes), cap, [episode.ep])
+        add("moments", picker, tokens(moments.messages(episode, empty_header, empty_sheet, {"marks": []}), moments.schema(episode), picker),
+            context_allowance + cap, judging.output_cap(cfg, "moments", picker), [episode.ep])
+        count = min(cfg.judge.full_run.top_per_episode, cfg.builder.max_per_episode) if episode.ep < cfg.spoiler.late_series_start else 0
+        if not count:
+            continue
+        ids = [f"P05-E{episode.ep:02d}-{n:03d}" for n in range(1, count + 1)]
+        add("answer_key", picker,
+            tokens(judge_prompts.key_messages(episode, empty_header, empty_sheet, []), judge_prompts.key_schema(ids), picker),
+            context_allowance + count * estimate_tokens(json.dumps([line.id for line in episode.lines])),
+            judging.output_cap(cfg, "answer_key", picker), [episode.ep])
+        request, schema, _ = judge_prompts.cold_request(episode.lines, list(judge_prompts.QUESTIONS))
+        repeated = min(count, cfg.judge.full_run.repeat_top_per_episode)
+        add("cold_judge", judge, tokens(request, schema, judge), 0,
+            judging.output_cap(cfg, "cold_judge", judge), [episode.ep],
+            count + repeated * (cfg.judge.full_run.repeat_runs - 1), basis="full-episode bound for a clip-local request")
+        request, schema = judge_prompts.fidelity_request(dict.fromkeys(judge_prompts.KEY_FIELDS, ""), dict.fromkeys(judge_prompts.READER_FIELDS, ""))
+        add("fidelity", judge, tokens(request, schema, judge), cfg.judge.fidelity_dependency_allowance_tokens,
+            judging.output_cap(cfg, "fidelity", judge), [episode.ep], count)
+    ping = parts.get("guard_refresh_ping")
+    if ping:
+        add("guard_refresh_ping", judge, ping["known_input_tokens"], 0, ping["output_budget_tokens"], [],
+            basis="known prompt and configured output cap")
+    return rows
 
 
 def snap_check(cfg, episodes):
@@ -167,6 +258,8 @@ def snap_check(cfg, episodes):
         for promo in candidates["candidates"]:
             judging.checked_item(promo, episode, cfg)
             checked += 1
+        if cfg.free_demo:
+            continue
         stored = finding.read_json(cfg.output_root / f"baseline/baseline_E{episode.ep:02d}.json")
         for key in ("kept", "sensitivity_kept"):
             for promo in stored[key]:
@@ -221,7 +314,7 @@ def run(cfg, episodes, *, client=None, no_cache=False, allow_held_out=False):
     }
     status = "failed"
     try:
-        for name in ORDER:
+        for name in stage_order(cfg):
             first = len(client.records)
             phase_start = time.monotonic()
             stages[name] = {"status": "running"}
@@ -240,7 +333,8 @@ def run(cfg, episodes, *, client=None, no_cache=False, allow_held_out=False):
         status = "complete"
         return {"status": status, "run": cfg.run_name, "stages": stages,
                 "candidates_kept": results["build"]["kept"], "ranking": results["rank"],
-                "retry_diagnostics": results["judge"]["retry_diagnostics"], "baseline": results["baseline"]}
+                "retry_diagnostics": results["judge"]["retry_diagnostics"],
+                "baseline": results.get("baseline", {"status": "skipped", "reason": "free demo, not evaluation"})}
     finally:
         manifest(cfg, [e.ep for e in episodes], status=status, stages=stages, llm=summarize(client.records, cfg),
                  wall_time_s=time.monotonic() - started,

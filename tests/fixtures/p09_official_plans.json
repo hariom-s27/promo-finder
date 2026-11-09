@@ -1,0 +1,390 @@
+{
+  "v1": {
+    "config_sha256": "95b29740a2a0fe545eed11a028b56a87442dc30bd37ffeb845c9427c89721d03",
+    "daily_guard": {
+      "maximum_age_s": 300,
+      "observation_age_s": null,
+      "observed_at": null,
+      "planned_groq_calls": 0,
+      "remaining_requests": null,
+      "required_remaining_requests": 0,
+      "safety_factor": 1.2,
+      "status": "passed"
+    },
+    "dry_run": true,
+    "episodes": [
+      5,
+      9,
+      47
+    ],
+    "estimate_basis": "candidate ceilings; full-episode cold-input upper bounds; dependency output caps; offline len/4 tokens; excludes latency/retries",
+    "estimated_groq_time_s": 0,
+    "estimated_judge_pacing_s": 0.0,
+    "frozen_config_sha256": {
+      "config/baseline.yaml": "57ccd891e430926d0b2bc2766b4488759a32f3408def2bfdab684b8e37ca7cef",
+      "config/eval_order.yaml": "71d0a4042e95ec90a5ec509f28eac447721d3e951ecb0259cb376520db734ab8"
+    },
+    "judge_quota": {
+      "effective_rpm": 1000,
+      "effective_tpm": null,
+      "rpm": 1000,
+      "tpm": null,
+      "utilization": 1.0
+    },
+    "max_calls_per_run": 42,
+    "order": [
+      "understand",
+      "find",
+      "build",
+      "judge",
+      "rank",
+      "baseline",
+      "snap/check"
+    ],
+    "parts": {
+      "answer_key": {
+        "calls": 2,
+        "dependency_allowance_tokens": 8480,
+        "estimated_input_tokens": 9796,
+        "estimated_usd": 0.026449,
+        "known_input_tokens": 1316,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 12000,
+        "provider": "fakeprov"
+      },
+      "baseline": {
+        "calls": 3,
+        "dependency_allowance_tokens": 3000,
+        "estimated_input_tokens": 4647,
+        "estimated_usd": 0.03716175,
+        "known_input_tokens": 1647,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 18000,
+        "provider": "fakeprov"
+      },
+      "build": {
+        "calls": 0,
+        "dependency_allowance_tokens": 0,
+        "estimated_input_tokens": 0,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 0,
+        "model_key": null,
+        "output_budget_tokens": 0,
+        "provider": "code"
+      },
+      "characters": {
+        "calls": 3,
+        "dependency_allowance_tokens": 0,
+        "estimated_cost_usd": 0.00649275,
+        "estimated_input_tokens": 1971,
+        "estimated_output_tokens": 3000,
+        "estimated_usd": 0.00649275,
+        "known_input_tokens": 1971,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 3000,
+        "provider": "fakeprov"
+      },
+      "cold_judge": {
+        "calls": 12,
+        "dependency_allowance_tokens": 0,
+        "estimated_input_tokens": 13320,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 13320,
+        "model_key": "fake_b",
+        "output_budget_tokens": 9600,
+        "provider": "fakeprov"
+      },
+      "fidelity": {
+        "calls": 8,
+        "dependency_allowance_tokens": 4096,
+        "estimated_input_tokens": 5952,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 1856,
+        "model_key": "fake_b",
+        "output_budget_tokens": 2048,
+        "provider": "fakeprov"
+      },
+      "header": {
+        "calls": 1,
+        "dependency_allowance_tokens": 3000,
+        "estimated_cost_usd": 0.0028,
+        "estimated_input_tokens": 3200,
+        "estimated_output_tokens": 1000,
+        "estimated_usd": 0.0028,
+        "known_input_tokens": 200,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 1000,
+        "provider": "fakeprov"
+      },
+      "moments": {
+        "calls": 3,
+        "dependency_allowance_tokens": 15000,
+        "estimated_input_tokens": 18330,
+        "estimated_usd": 0.0105825,
+        "known_input_tokens": 3330,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 3000,
+        "provider": "fakeprov"
+      },
+      "rank": {
+        "calls": 0,
+        "dependency_allowance_tokens": 0,
+        "estimated_input_tokens": 0,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 0,
+        "model_key": null,
+        "output_budget_tokens": 0,
+        "provider": "code"
+      },
+      "reveals": {
+        "calls": 3,
+        "dependency_allowance_tokens": 12000,
+        "estimated_cost_usd": 0.00953625,
+        "estimated_input_tokens": 14145,
+        "estimated_output_tokens": 3000,
+        "estimated_usd": 0.00953625,
+        "known_input_tokens": 2145,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 3000,
+        "provider": "fakeprov"
+      },
+      "snap/check": {
+        "calls": 0,
+        "dependency_allowance_tokens": 0,
+        "estimated_input_tokens": 0,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 0,
+        "model_key": null,
+        "output_budget_tokens": 0,
+        "provider": "code"
+      }
+    },
+    "planned_by_episode": {
+      "E05": {
+        "judged_items_upper_bound": 4,
+        "repeated_items_upper_bound": 1
+      },
+      "E09": {
+        "judged_items_upper_bound": 4,
+        "repeated_items_upper_bound": 1
+      },
+      "E47": {
+        "judged_items_upper_bound": 0,
+        "repeated_items_upper_bound": 0
+      }
+    },
+    "planned_calls": 35,
+    "providers": {
+      "code": {
+        "calls": 0,
+        "estimated_input_tokens": 0,
+        "estimated_usd": 0.0,
+        "output_budget_tokens": 0
+      },
+      "fakeprov": {
+        "calls": 35,
+        "estimated_input_tokens": 71361,
+        "estimated_usd": 0.09302225,
+        "output_budget_tokens": 51648
+      }
+    },
+    "run": "dev",
+    "score_formula_sha256": "8f76ddf50855441a2b9dfc1e60b7f4f0db3cca308a8a37f22c7f25374b5638f3",
+    "time_basis": "rolling request and input-plus-output reservations; excludes provider latency, retries and upstream Azure work"
+  },
+  "v2": {
+    "config_sha256": "95b29740a2a0fe545eed11a028b56a87442dc30bd37ffeb845c9427c89721d03",
+    "daily_guard": {
+      "maximum_age_s": 300,
+      "observation_age_s": null,
+      "observed_at": null,
+      "planned_groq_calls": 0,
+      "remaining_requests": null,
+      "required_remaining_requests": 0,
+      "safety_factor": 1.2,
+      "status": "passed"
+    },
+    "dry_run": true,
+    "episodes": [
+      5,
+      9,
+      47
+    ],
+    "estimate_basis": "candidate ceilings; full-episode cold-input upper bounds; dependency output caps; offline len/4 tokens; excludes latency/retries",
+    "estimated_groq_time_s": 0,
+    "estimated_judge_pacing_s": 0.0,
+    "frozen_config_sha256": {
+      "config/baseline.yaml": "57ccd891e430926d0b2bc2766b4488759a32f3408def2bfdab684b8e37ca7cef",
+      "config/eval_order.yaml": "71d0a4042e95ec90a5ec509f28eac447721d3e951ecb0259cb376520db734ab8"
+    },
+    "judge_quota": {
+      "effective_rpm": 1000,
+      "effective_tpm": null,
+      "rpm": 1000,
+      "tpm": null,
+      "utilization": 1.0
+    },
+    "max_calls_per_run": 42,
+    "order": [
+      "understand",
+      "find",
+      "build",
+      "judge",
+      "rank",
+      "baseline",
+      "snap/check"
+    ],
+    "overlay_path": "config/v2.yaml",
+    "overlay_sha256": "e09761554e5407f6d2b9a815c15f136942124b874fa048c192c221c058ece2f5",
+    "parts": {
+      "answer_key": {
+        "calls": 2,
+        "dependency_allowance_tokens": 8480,
+        "estimated_input_tokens": 9796,
+        "estimated_usd": 0.026449,
+        "known_input_tokens": 1316,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 12000,
+        "provider": "fakeprov"
+      },
+      "baseline": {
+        "calls": 3,
+        "dependency_allowance_tokens": 3000,
+        "estimated_input_tokens": 4647,
+        "estimated_usd": 0.03716175,
+        "known_input_tokens": 1647,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 18000,
+        "provider": "fakeprov"
+      },
+      "build": {
+        "calls": 0,
+        "dependency_allowance_tokens": 0,
+        "estimated_input_tokens": 0,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 0,
+        "model_key": null,
+        "output_budget_tokens": 0,
+        "provider": "code"
+      },
+      "characters": {
+        "calls": 3,
+        "dependency_allowance_tokens": 0,
+        "estimated_cost_usd": 0.00649275,
+        "estimated_input_tokens": 1971,
+        "estimated_output_tokens": 3000,
+        "estimated_usd": 0.00649275,
+        "known_input_tokens": 1971,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 3000,
+        "provider": "fakeprov"
+      },
+      "cold_judge": {
+        "calls": 12,
+        "dependency_allowance_tokens": 0,
+        "estimated_input_tokens": 13320,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 13320,
+        "model_key": "fake_b",
+        "output_budget_tokens": 9600,
+        "provider": "fakeprov"
+      },
+      "fidelity": {
+        "calls": 8,
+        "dependency_allowance_tokens": 4096,
+        "estimated_input_tokens": 5952,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 1856,
+        "model_key": "fake_b",
+        "output_budget_tokens": 2048,
+        "provider": "fakeprov"
+      },
+      "header": {
+        "calls": 1,
+        "dependency_allowance_tokens": 3000,
+        "estimated_cost_usd": 0.0028,
+        "estimated_input_tokens": 3200,
+        "estimated_output_tokens": 1000,
+        "estimated_usd": 0.0028,
+        "known_input_tokens": 200,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 1000,
+        "provider": "fakeprov"
+      },
+      "moments": {
+        "calls": 3,
+        "dependency_allowance_tokens": 15000,
+        "estimated_input_tokens": 18330,
+        "estimated_usd": 0.0105825,
+        "known_input_tokens": 3330,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 3000,
+        "provider": "fakeprov"
+      },
+      "rank": {
+        "calls": 0,
+        "dependency_allowance_tokens": 0,
+        "estimated_input_tokens": 0,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 0,
+        "model_key": null,
+        "output_budget_tokens": 0,
+        "provider": "code"
+      },
+      "reveals": {
+        "calls": 3,
+        "dependency_allowance_tokens": 12000,
+        "estimated_cost_usd": 0.00953625,
+        "estimated_input_tokens": 14145,
+        "estimated_output_tokens": 3000,
+        "estimated_usd": 0.00953625,
+        "known_input_tokens": 2145,
+        "model_key": "azure_mini",
+        "output_budget_tokens": 3000,
+        "provider": "fakeprov"
+      },
+      "snap/check": {
+        "calls": 0,
+        "dependency_allowance_tokens": 0,
+        "estimated_input_tokens": 0,
+        "estimated_usd": 0.0,
+        "known_input_tokens": 0,
+        "model_key": null,
+        "output_budget_tokens": 0,
+        "provider": "code"
+      }
+    },
+    "planned_by_episode": {
+      "E05": {
+        "judged_items_upper_bound": 4,
+        "repeated_items_upper_bound": 1
+      },
+      "E09": {
+        "judged_items_upper_bound": 4,
+        "repeated_items_upper_bound": 1
+      },
+      "E47": {
+        "judged_items_upper_bound": 0,
+        "repeated_items_upper_bound": 0
+      }
+    },
+    "planned_calls": 35,
+    "providers": {
+      "code": {
+        "calls": 0,
+        "estimated_input_tokens": 0,
+        "estimated_usd": 0.0,
+        "output_budget_tokens": 0
+      },
+      "fakeprov": {
+        "calls": 35,
+        "estimated_input_tokens": 71361,
+        "estimated_usd": 0.09302225,
+        "output_budget_tokens": 51648
+      }
+    },
+    "run": "dev",
+    "score_formula_sha256": "8f76ddf50855441a2b9dfc1e60b7f4f0db3cca308a8a37f22c7f25374b5638f3",
+    "time_basis": "rolling request and input-plus-output reservations; excludes provider latency, retries and upstream Azure work"
+  }
+}

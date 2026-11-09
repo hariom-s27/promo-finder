@@ -29,7 +29,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SHINGLE = 8
 BLOCKED_TOP = ("data", "outputs", ".cache", ".venv")
 # gold label files are committed only at P08 (D28), the fresh-set gold never (P08b); the template is allowed
-BLOCKED_GLOBS = ("eval/gold.csv", "eval/gold_v*.csv", "eval/gold_fresh*.csv", "*.xlsx")
+BLOCKED_GLOBS = ("eval/gold.csv", "eval/gold_v*.csv", "eval/gold_fresh*.csv", "*.xlsx",
+                 "top_promos_by_episode.md", "**/top_promos_by_episode.md")
 WALK_SKIP = {".git", ".venv", "outputs", ".cache", "data", "__pycache__", ".pytest_cache", "build", "dist"}
 # Windows containing a time token (e.g. 00:04.80) are format, not content: skip them so
 # the shared screenplay layout of invented fixtures does not trigger false hits.
@@ -48,7 +49,7 @@ def _is_format(tok: str) -> bool:
 
 def is_env_file(path: str) -> bool:
     name = PurePosixPath(path.replace("\\", "/")).name.lower()
-    return name == ".env" or name.endswith(".env") or name.startswith(".env.")
+    return name in {".env", "secrets.toml"} or name.endswith(".env") or name.startswith(".env.")
 
 
 def path_problems(paths: Iterable[str]) -> list[str]:
@@ -169,6 +170,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     checked = 0
     for p in paths:
         if (is_env_file(p) or fnmatch.fnmatchcase(p.lower(), "*.xlsx")
+                or PurePosixPath(p).name.lower() == "top_promos_by_episode.md"
                 or PurePosixPath(p).parts[:1] and PurePosixPath(p).parts[0] in BLOCKED_TOP):
             continue  # never opened; blocked paths are reported above
         raw = read_staged(root, p) if staged_mode else (root / p).read_bytes()

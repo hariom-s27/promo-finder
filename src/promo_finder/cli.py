@@ -410,7 +410,7 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--run", default="dev", help="output run name (default dev)")
     for command in (build, rank, pipeline):
         command.add_argument("--config-overlay", default=None,
-                             help="whitelisted overlay file (e.g. config/v2.yaml); only builder switches can change")
+                             help="whitelisted overlay: builder switches, active roles, or free-only character batching")
     args = ap.parse_args(argv)
     try:
         overlay = getattr(args, "config_overlay", None)
