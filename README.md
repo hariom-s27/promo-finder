@@ -12,8 +12,7 @@
 ## Links
 
 - Live app: https://promo-finder-fcpgayixdokn67creo3jeq.streamlit.app/
-- Solution doc (PDF): <PASTE PDF SHARE LINK>
-- Walkthrough video: <PASTE LOOM LINK>
+- Solution doc (PDF): https://drive.google.com/file/d/1pxUT2OyP0gtYoaFyhJxlmnDxlEPy4Qq6/view?usp=sharing
 - Raw outputs: shared privately with Kuku via the submission form (contains confidential script text; not linked publicly).
 
 ## What it does
