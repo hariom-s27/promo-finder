@@ -105,14 +105,14 @@ For the small app, install `requirements.txt`, then run:
 streamlit run app/streamlit_app.py
 ```
 
-The passcode-protected app has two tabs (D101 b):
+Both app tabs open without a passcode (D105 c):
 
 - **Full results (Azure run):** five saved launch-batch cards, all ranked metadata, evaluation metrics, per-stage Azure usage and v2 rerun cost. A cost-at-scale box projects the P07b per-show cost and minutes to 150 shows/month, explicitly labelled as an assumption. The repository export contains timestamps, duration, type codes, score, lane and rank only; no transcript, explanations, speaker labels or names. Build it with `python tools/export_app_results.py`.
-- **Try it live (free):** accepts one to three episodes, uses the Groq demo path, and keeps input/output/cache files in a temporary directory cleaned after processing. It sends uploaded text to Groq only when the authenticated user starts a run. The live table and JSON download remain in the active browser session.
+- **Try it live (free):** accepts one to three episodes, uses the Groq demo path, and keeps input/output/cache files in a temporary directory cleaned after processing. It sends uploaded text to Groq only when the user starts a run. The live table and JSON download remain in the active browser session.
 
-The saved-results tab works without a Groq key. The app reads keys only from Streamlit Secrets or the environment and never loads `.env`.
+Tab 1 works without a Groq key. If the key is missing or a quota/rate limit is reached, Tab 2 shows "free-tier limit reached, try later; full results are in Tab 1". The app reads keys only from Streamlit Secrets or the environment and never loads `.env`.
 
-To deploy: Streamlit Cloud → New app → select repository and branch → `app/streamlit_app.py`. Choose Python 3.11 or later; enter `APP_PASSCODE` and `GROQ_API_KEY` in Cloud Secrets. `.streamlit/secrets.toml.example` lists the names only; the real `secrets.toml` is ignored and guard-blocked. Deployment is performed by Hariom; no push or deployment is performed by this task.
+To deploy: Streamlit Cloud → New app → select repository and branch → `app/streamlit_app.py`. Choose Python 3.11 or later; enter `GROQ_API_KEY` in Cloud Secrets. `.streamlit/secrets.toml.example` lists the name only; the real `secrets.toml` is ignored and guard-blocked. Deployment is performed by Hariom; no push or deployment is performed by this task.
 
 Build the local confidential handoff from the completed free attempt:
 

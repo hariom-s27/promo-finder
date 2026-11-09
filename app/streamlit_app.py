@@ -1,4 +1,4 @@
-"""Passcode-protected, temporary-file-only Streamlit demo."""
+"""Open saved results and a temporary-file-only free demo."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ import os
 import hashlib
 from pathlib import Path
 
-from promo_finder.demo import DemoError, authorized, run_uploads, validate_uploads
+from promo_finder.demo import DemoError, FREE_TIER_MESSAGE, FreeTierUnavailable, run_uploads, validate_uploads
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,6 +61,10 @@ def full_results(st):
 
 def live_demo(st):
     st.caption("free tier, small demo; full runs via CLI")
+    key = setting(st, "GROQ_API_KEY", environment=True)
+    if not key:
+        st.info(FREE_TIER_MESSAGE)
+        return
     st.write("Upload 1–3 UTF-8 episode .txt files in the input-pack format. Files and generated working data are deleted after processing. Text is sent to Groq when you start the run.")
     st.caption("Use episode-001-Episode 1.txt style filenames. The free demo skips the comparison baseline and is not an evaluation.")
     uploads = st.file_uploader("Episodes", type=["txt"], accept_multiple_files=True)
@@ -83,10 +87,6 @@ def live_demo(st):
     if st.session_state.get("upload_signature") != signature.hexdigest():
         st.session_state.pop("promo_result", None)
         st.session_state["upload_signature"] = signature.hexdigest()
-    key = setting(st, "GROQ_API_KEY", environment=True)
-    if not key:
-        st.error("GROQ_API_KEY is missing from Streamlit Secrets or the environment.")
-        return
     if st.button("Find promos", type="primary"):
         # Retain only the display/download data in the active session, never files.
         st.session_state.pop("promo_result", None)
@@ -95,7 +95,10 @@ def live_demo(st):
                 rows = run_uploads(entries, key)
             except DemoError as exc:
                 status.update(label="Run stopped", state="error")
-                st.error(str(exc))
+                if isinstance(exc, FreeTierUnavailable):
+                    st.info(FREE_TIER_MESSAGE)
+                else:
+                    st.error(str(exc))
                 return
             st.session_state["promo_result"] = rows
             status.update(label=f"Complete: {len(rows)} promos", state="complete")
@@ -113,13 +116,6 @@ def main(st=None):
         import streamlit as st
     st.set_page_config(page_title="Promo finder demo", layout="wide")
     st.title("Promo finder")
-    expected = setting(st, "APP_PASSCODE")
-    if not expected:
-        st.error("APP_PASSCODE must be configured in Streamlit Secrets.")
-        return
-    if not authorized(st.text_input("Passcode", type="password"), expected):
-        st.info("Enter the passcode to view results or upload episodes.")
-        return
     saved, live = st.tabs(["Full results (Azure run)", "Try it live (free)"])
     with saved:
         full_results(st)

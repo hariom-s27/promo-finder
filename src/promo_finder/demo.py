@@ -1,7 +1,6 @@
 """Isolated upload demo. Uploads and generated files live only in a temporary tree."""
 from __future__ import annotations
 
-import hmac
 import json
 import re
 import shutil
@@ -13,15 +12,33 @@ from .parser import FILENAME_RE
 
 MAX_UPLOADS = 3
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+FREE_TIER_MESSAGE = "free-tier limit reached, try later; full results are in Tab 1"
 
 
 class DemoError(Exception):
     """Public, content-free error messages safe for the app."""
 
 
-def authorized(candidate, expected):
-    return bool(isinstance(candidate, str) and isinstance(expected, str) and expected
-                and hmac.compare_digest(candidate.encode("utf-8"), expected.encode("utf-8")))
+class FreeTierUnavailable(DemoError):
+    """Missing credentials or exhausted free quota, without provider details."""
+
+
+def is_free_tier_limit(exc):
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if getattr(exc, "code", None) in {"RATE_LIMITED", "GROQ_DAILY_BUDGET_REFUSED", "MISSING_KEY"}:
+            return True
+        if getattr(exc, "status_code", None) == 429 or getattr(getattr(exc, "response", None), "status_code", None) == 429:
+            return True
+        # Some wrapper errors retain only a scrubbed SDK message. Inspect it in
+        # memory to choose a fixed public message; never print or persist it.
+        text = str(exc).lower()
+        if any(token in text for token in ("http 429", "rate limit", "rate_limit", "quota", "tokens per day",
+                                            "daily limit", "exceeds provider tpm", "exceeds judge tpm")):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
 
 
 def validate_uploads(uploads):
@@ -93,7 +110,7 @@ def table_rows(cfg):
 
 
 def execute(cfg, api_key):
-    """Live entry point; called only by an authenticated, explicit app submission."""
+    """Live entry point; called only by an explicit app submission."""
     import openai
     from . import pipeline, understanding
     from .llm import LLMClient
@@ -128,7 +145,7 @@ def execute(cfg, api_key):
 def run_uploads(uploads, api_key, *, runner=None, temp_parent=None):
     validate_uploads(uploads)
     if not isinstance(api_key, str) or not api_key.strip():
-        raise DemoError("GROQ_API_KEY is missing.")
+        raise FreeTierUnavailable(FREE_TIER_MESSAGE)
     # This owns and cleans only the temporary tree it creates, including on errors.
     with tempfile.TemporaryDirectory(prefix="promo-demo-", dir=temp_parent) as directory:
         cfg = prepare(Path(directory), uploads)
@@ -137,6 +154,8 @@ def run_uploads(uploads, api_key, *, runner=None, temp_parent=None):
         except DemoError:
             raise
         except Exception as exc:
+            if is_free_tier_limit(exc):
+                raise FreeTierUnavailable(FREE_TIER_MESSAGE) from None
             code = getattr(exc, "code", "DEMO_RUN_FAILED")
             if not isinstance(code, str) or not re.fullmatch(r"[A-Z_]{3,50}", code):
                 code = "DEMO_RUN_FAILED"

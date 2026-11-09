@@ -1,4 +1,4 @@
-"""Passcode, upload and temporary-storage checks; no Streamlit server or network."""
+"""Open tabs, quota fallback, upload and temp-storage checks; no network."""
 import importlib.util
 from pathlib import Path
 
@@ -12,28 +12,25 @@ spec.loader.exec_module(app)
 UPLOAD = ("episode-023-Episode 23.txt", b"invented fixture")
 
 
-@pytest.mark.parametrize("provided,expected,ok", [("invented", "invented", True), ("wrong", "invented", False),
-                                                  ("", "", False), (None, "invented", False), ("é", "é", True)])
-def test_passcode_comparison(provided, expected, ok):
-    assert demo.authorized(provided, expected) is ok
-
-
 class FakeStreamlit:
-    def __init__(self, passcode="wrong", configured=True, uploads=None):
-        self.secrets = {"APP_PASSCODE": "invented-passcode", "GROQ_API_KEY": "invented-key"} if configured else {}
-        self.passcode, self.uploads = passcode, uploads
+    def __init__(self, configured=True, uploads=None, submit=False):
+        self.secrets = {"GROQ_API_KEY": "invented-key"} if configured else {}
+        self.uploads, self.submit = uploads, submit
         self.upload_calls = 0
         self.errors = []
+        self.infos = []
+        self.status_updates = []
         self.session_state = {}
         self.tab_labels = None
 
     def set_page_config(self, **kwargs): pass
     def title(self, *args): pass
     def caption(self, *args): pass
-    def info(self, *args): pass
+    def info(self, message): self.infos.append(message)
     def write(self, *args): pass
     def error(self, text): self.errors.append(text)
-    def text_input(self, *args, **kwargs): return self.passcode
+    def text_input(self, *args, **kwargs):
+        pytest.fail("unexpected authentication widget")
     def tabs(self, labels):
         from contextlib import nullcontext
         self.tab_labels = labels
@@ -41,18 +38,29 @@ class FakeStreamlit:
     def file_uploader(self, *args, **kwargs):
         self.upload_calls += 1
         return self.uploads
+    def button(self, *args, **kwargs): return self.submit
+    def status(self, *args, **kwargs): return self
+    def __enter__(self): return self
+    def __exit__(self, *args): return False
+    def update(self, **kwargs): self.status_updates.append(kwargs)
 
 
 @pytest.mark.parametrize("configured", [True, False])
-def test_gate_blocks_upload_and_processing(configured, monkeypatch):
+def test_both_tabs_open_without_authentication(configured, monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     st = FakeStreamlit(configured=configured)
-    monkeypatch.setattr(app, "run_uploads", lambda *a: pytest.fail("processing before gate"))
+    rendered = []
+    monkeypatch.setattr(app, "full_results", lambda st: rendered.append("full"))
+    monkeypatch.setattr(app, "run_uploads", lambda *a: pytest.fail("processing without submission"))
     app.main(st)
-    assert st.upload_calls == 0
+    assert rendered == ["full"] and st.upload_calls == (1 if configured else 0)
+    assert st.tab_labels == ["Full results (Azure run)", "Try it live (free)"]
+    if not configured:
+        assert st.infos == [demo.FREE_TIER_MESSAGE] and st.errors == []
 
 
 def test_app_rejects_four_before_reading_uploads(monkeypatch):
-    st = FakeStreamlit(passcode="invented-passcode", uploads=[object()] * 4)
+    st = FakeStreamlit(uploads=[object()] * 4)
     monkeypatch.setattr(app, "full_results", lambda st: None)
     monkeypatch.setattr(app, "run_uploads", lambda *a: pytest.fail("processing over cap"))
     app.main(st)
@@ -60,7 +68,7 @@ def test_app_rejects_four_before_reading_uploads(monkeypatch):
 
 
 def test_both_tabs_are_wired_and_saved_results_need_no_groq_key(monkeypatch):
-    st = FakeStreamlit(passcode="invented-passcode")
+    st = FakeStreamlit()
     st.secrets.pop("GROQ_API_KEY")
     seen = []
     monkeypatch.setattr(app, "full_results", lambda st: seen.append("full"))
@@ -68,6 +76,46 @@ def test_both_tabs_are_wired_and_saved_results_need_no_groq_key(monkeypatch):
     app.main(st)
     assert st.tab_labels == ["Full results (Azure run)", "Try it live (free)"]
     assert seen == ["full", "live"]
+
+
+@pytest.mark.parametrize("kind", ["rate_limited", "daily_limit", "wrapped_429", "sdk_429", "provider_quota"])
+def test_quota_failure_shows_friendly_message_and_cleans_temp(kind, monkeypatch, tmp_path):
+    import httpx
+    import openai
+    from promo_finder.budget import DailyBudgetRefused
+    from promo_finder.llm import ProviderError, RateLimited
+    failures = {"rate_limited": RateLimited("invented-private-detail"),
+                "daily_limit": DailyBudgetRefused("invented-private-detail"),
+                "wrapped_429": ProviderError("HTTP 429: invented-private-detail"),
+                "sdk_429": openai.RateLimitError("invented-private-detail", body=None,
+                    response=httpx.Response(429, request=httpx.Request("POST", "https://invented.invalid"))),
+                "provider_quota": ProviderError("quota exhausted: invented-private-detail")}
+
+    class Upload:
+        name = UPLOAD[0]
+        def getvalue(self): return UPLOAD[1]
+
+    roots = []
+    def runner(cfg, key):
+        roots.append(cfg.root)
+        raise failures[kind]
+
+    monkeypatch.setattr(app, "full_results", lambda st: None)
+    monkeypatch.setattr(app, "run_uploads", lambda entries, key:
+                        demo.run_uploads(entries, key, runner=runner, temp_parent=tmp_path))
+    st = FakeStreamlit(uploads=[Upload()], submit=True)
+    app.main(st)
+    assert st.infos == [demo.FREE_TIER_MESSAGE] and st.errors == []
+    assert st.status_updates[-1]["state"] == "error"
+    assert roots and not roots[0].exists() and not list(tmp_path.iterdir())
+    assert "promo_result" not in st.session_state
+
+
+def test_missing_key_helper_returns_friendly_message_without_temp_files(tmp_path):
+    with pytest.raises(demo.FreeTierUnavailable) as error:
+        demo.run_uploads([UPLOAD], "", runner=lambda *a: pytest.fail("missing-key request"), temp_parent=tmp_path)
+    assert str(error.value) == demo.FREE_TIER_MESSAGE
+    assert not list(tmp_path.iterdir())
 
 
 @pytest.mark.parametrize("uploads", [[], [UPLOAD] * 4, [("../episode-023-Episode 23.txt", b"invented")],
