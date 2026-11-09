@@ -9,6 +9,13 @@
 
 # Promo finder
 
+## Links
+
+- Live app: https://promo-finder-fcpgayixdokn67creo3jeq.streamlit.app/
+- Solution doc (PDF): <PASTE PDF SHARE LINK>
+- Walkthrough video: <PASTE LOOM LINK>
+- Raw outputs: shared privately with Kuku via the submission form (contains confidential script text; not linked publicly).
+
 ## What it does
 
 Reads a timestamped microdrama screenplay and finds ranked 20–60 second promos with a hook, a cliffhanger and enough context to stand alone. Results have launch-batch, reserve and needs-human lanes for editorial review. v1 is the default; v2 is an optional overlay (D99).
