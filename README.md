@@ -97,7 +97,7 @@ F2 extends eligible short clips to the first line boundary reaching the minimum 
 
 ## Confidentiality, app and local package
 
-Scripts are supplied locally by the user; no real script data is included in this repository. Generated run files, gold labels, caches and credentials remain ignored. The decisions placeholder is in [docs/DECISIONS.md](docs/DECISIONS.md); Hariom supplies its content.
+Scripts are supplied locally by the user; no real script data is included in this repository. Generated run files, gold labels, caches and credentials remain ignored.
 
 For the small app, install `requirements.txt`, then run:
 
