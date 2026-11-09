@@ -16,3 +16,4 @@ Frozen BEFORE any gold label exists. A changed file = a new version + a new DECI
 | config/v2.yaml | e09761554e5407f6d2b9a815c15f136942124b874fa048c192c221c058ece2f5 | 766 | 2026-11-09T01:07:47Z | v2 overlay F2+F5b (D97) |
 | eval/match_rule_fresh.md | ba2a39d027a25ee19ea96a7517a44e637373a0efd05945ec04c34e843e6a884a | 3015 | 2026-11-09T01:07:48Z | fresh-set match rule (D94c) |
 | eval/match_rule_fresh_b.md | 545ee2060cc7b640dcb2559d950a4dadbdd655411ba7317a4d28b66049acfa5d | 3433 | 2026-11-09T01:47:13Z | fresh block B rule (D98b) |
+| eval/gold_fresh.csv | 40db75a8ffd04cb4d274f44f77415470cbf1e95b066ca448166922f10611a0e7 | 1321 | 2026-11-09T02:11:59Z | fresh block A gold (31-34), labelled by Hariom |
