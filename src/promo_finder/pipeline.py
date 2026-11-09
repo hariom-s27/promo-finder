@@ -22,7 +22,7 @@ ORDER = ("understand", "find", "build", "judge", "rank", "baseline", "snap/check
 
 
 def stage_order(cfg):
-    return tuple(name for name in ORDER if not (cfg.free_demo and name == "baseline"))
+    return tuple(name for name in ORDER if not (cfg.baseline_skipped and name == "baseline"))
 
 
 GUARD_PING_MESSAGES = [{"role": "user", "content": "Return only JSON with ok set to true."}]
@@ -141,7 +141,7 @@ def dry_run(cfg, episodes, *, allow_held_out=False):
         parts["guard_refresh_ping"] = {"calls": 1, "known_input_tokens": ping_tokens, "dependency_allowance_tokens": 0,
                                        "output_budget_tokens": ping_cap, "provider": judge_provider, "model_key": judge}
         reservations.insert(0, ping_tokens + ping_cap)
-    if not cfg.free_demo:
+    if not cfg.baseline_skipped:
         parts["baseline"] = baseline.dry_run(cfg, episodes, allow_held_out=allow_held_out)
     for part in ("build", "rank", "snap/check"):
         parts[part] = {"calls": 0, "known_input_tokens": 0, "dependency_allowance_tokens": 0,
@@ -258,7 +258,7 @@ def snap_check(cfg, episodes):
         for promo in candidates["candidates"]:
             judging.checked_item(promo, episode, cfg)
             checked += 1
-        if cfg.free_demo:
+        if cfg.baseline_skipped:
             continue
         stored = finding.read_json(cfg.output_root / f"baseline/baseline_E{episode.ep:02d}.json")
         for key in ("kept", "sensitivity_kept"):
@@ -334,7 +334,8 @@ def run(cfg, episodes, *, client=None, no_cache=False, allow_held_out=False):
         return {"status": status, "run": cfg.run_name, "stages": stages,
                 "candidates_kept": results["build"]["kept"], "ranking": results["rank"],
                 "retry_diagnostics": results["judge"]["retry_diagnostics"],
-                "baseline": results.get("baseline", {"status": "skipped", "reason": "free demo, not evaluation"})}
+                "baseline": results.get("baseline", {"status": "skipped", "reason": (
+                    "free demo, not evaluation" if cfg.free_demo else "demo, not evaluation")})}
     finally:
         manifest(cfg, [e.ep for e in episodes], status=status, stages=stages, llm=summarize(client.records, cfg),
                  wall_time_s=time.monotonic() - started,

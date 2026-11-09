@@ -389,13 +389,15 @@ class RateLimiter:
 
 
 # ---------------------------------------------------------------- clients
-def default_client_factory(provider: str, pcfg: ProviderCfg, mode: Optional[str]):
-    key = os.environ.get(pcfg.key_env, "")
+def default_client_factory(provider: str, pcfg: ProviderCfg, mode: Optional[str], env=None):
+    """Build a provider client. `env` defaults to the process environment; the app passes its own mapping."""
+    env = os.environ if env is None else env
+    key = env.get(pcfg.key_env, "")
     if not key:
         raise MissingKey(pcfg.key_env)
     common = dict(api_key=key, max_retries=0, timeout=120.0)
     if provider == "azure_foundry":
-        endpoint = os.environ.get(pcfg.endpoint_env or "", "")
+        endpoint = env.get(pcfg.endpoint_env or "", "")
         if not endpoint:
             raise MissingKey(pcfg.endpoint_env)
         try:
@@ -404,7 +406,7 @@ def default_client_factory(provider: str, pcfg: ProviderCfg, mode: Optional[str]
             raise LLMError("invalid Foundry resource endpoint form") from None
         return openai.OpenAI(base_url=base_url, **common)
     if pcfg.is_azure:
-        endpoint = os.environ.get(pcfg.endpoint_env or "", "")
+        endpoint = env.get(pcfg.endpoint_env or "", "")
         if not endpoint:
             raise MissingKey(pcfg.endpoint_env)
         endpoint = endpoint.rstrip("/") + "/"

@@ -219,11 +219,17 @@ class Config(BaseModel):
     _overlay_path: Optional[Path] = PrivateAttr(default=None)
     _run_name: str = PrivateAttr(default="dev")
     _free_demo: bool = PrivateAttr(default=False)
+    _baseline_skipped: bool = PrivateAttr(default=False)
 
     @property
     def free_demo(self) -> bool:
         """Only an explicit free-role overlay enables the non-evaluation demo."""
         return self._free_demo
+
+    @property
+    def baseline_skipped(self) -> bool:
+        """No comparison baseline: the free demo, or the app's upload demo (never an evaluation)."""
+        return self._free_demo or self._baseline_skipped
 
     @property
     def root(self) -> Path:

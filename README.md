@@ -79,7 +79,7 @@ The free demo selects `groq_oss` (`openai/gpt-oss-120b`, family `openai`) and `g
 python -m promo_finder run --eps 23-24 --run free_demo --config-overlay config/free.yaml --dry-run
 ```
 
-**Free path = demo, not evaluation.** It skips the comparison baseline, uses singleton character batching (D100 a) and a free-only 4,500-token answer-key output cap (D104 a). Official v1/v2 settings, other caps, baseline and scoring behavior are unchanged. The app uses the same overlay. The supplied free limits are 30 RPM, 1,000 RPD, 8,000 TPM and 200,000 TPD per model. Inspect per-request and daily budgets before live use. No paid fallback is used.
+**Free path = demo, not evaluation.** It skips the comparison baseline, uses singleton character batching (D100 a) and a free-only 4,500-token answer-key output cap (D104 a). Official v1/v2 settings, other caps, baseline and scoring behavior are unchanged. The app's live tab no longer uses this overlay (D106 a); the free version is this CLI path. The supplied free limits are 30 RPM, 1,000 RPD, 8,000 TPM and 200,000 TPD per model. Inspect per-request and daily budgets before live use. No paid fallback is used.
 
 The D104 a attempt completed episodes 23–24, keeping and scoring four promos, with USD 0 recorded cost and zero 429s. It reused seven upstream cache entries from the earlier D102 partial attempt; only remaining judging work made new substantive requests. Two schema-validation retries resolved without cap changes. The D102 failure is preserved; the completed attempt lives in `outputs/runs/free_demo_d104/`. This demonstrates a small cached free workflow, not full-show free capacity or evaluated free-model quality. See the [P09 report](logs/P09_report.md).
 
@@ -108,11 +108,13 @@ streamlit run app/streamlit_app.py
 Both app tabs open without a passcode (D105 c):
 
 - **Full results (Azure run):** five saved launch-batch cards, all ranked metadata, evaluation metrics, per-stage Azure usage and v2 rerun cost. A cost-at-scale box projects the P07b per-show cost and minutes to 150 shows/month, explicitly labelled as an assumption. The repository export contains timestamps, duration, type codes, score, lane and rank only; no transcript, explanations, speaker labels or names. Build it with `python tools/export_app_results.py`.
-- **Try it live (free):** accepts one to three episodes, uses the Groq demo path, and keeps input/output/cache files in a temporary directory cleaned after processing. It sends uploaded text to Groq only when the user starts a run. The live table and JSON download remain in the active browser session.
+- **Try it live** (D106 a): accepts one to three episodes and runs the official Azure pair, the `azure_mini` picker and `azure_llama` judge from `config.yaml`, with the comparison baseline skipped (a demo, not an evaluation). Input, output and cache files stay in a temporary directory deleted after the run. The table and JSON download live only in the active browser session. Uploaded text is sent to Azure only when the user starts a run.
 
-Tab 1 works without a Groq key. If the key is missing or a quota/rate limit is reached, Tab 2 shows "free-tier limit reached, try later; full results are in Tab 1". The app reads keys only from Streamlit Secrets or the environment and never loads `.env`.
+A hard global cap of **30 episodes per UTC day** applies to this tab. It is an in-process counter shared by all visitors; a server restart resets it, and a failed run still counts. Past the cap the tab shows "daily demo cap reached; full results are in Tab 1". At the P07b rate (about USD 0.018 per episode, a list-price estimate) the cap bounds spend near USD 0.55 per UTC day per server process.
 
-To deploy: Streamlit Cloud → New app → select repository and branch → `app/streamlit_app.py`. Choose Python 3.11 or later; enter `GROQ_API_KEY` in Cloud Secrets. `.streamlit/secrets.toml.example` lists the name only; the real `secrets.toml` is ignored and guard-blocked. Deployment is performed by Hariom; no push or deployment is performed by this task.
+Tab 1 needs no keys. If an Azure secret is missing, Tab 2 shows a note naming the missing secret names (never values). A rate-limit or quota refusal shows "live demo is rate-limited or unavailable right now, try later; full results are in Tab 1". The app reads keys only from Streamlit Secrets or the environment, keeps them in memory (they are not written to the process environment or to disk) and never loads `.env`.
+
+To deploy: Streamlit Cloud → New app → select repository and branch → `app/streamlit_app.py`. Choose Python 3.11 or later; enter `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_FOUNDRY_API_KEY` and `AZURE_FOUNDRY_ENDPOINT` in Cloud Secrets. `.streamlit/secrets.toml.example` lists the names only; the real `secrets.toml` is ignored and guard-blocked. Deployment is performed by Hariom; no push or deployment is performed by this task. The Azure live path has been verified offline only (fake providers); run one small upload after deploying to confirm the live keys and deployments.
 
 Build the local confidential handoff from the completed free attempt:
 

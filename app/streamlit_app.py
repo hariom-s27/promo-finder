@@ -1,4 +1,4 @@
-"""Open saved results and a temporary-file-only free demo."""
+"""Open saved results and a temporary-file-only live demo on the official Azure models."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ import os
 import hashlib
 from pathlib import Path
 
-from promo_finder.demo import DemoError, FREE_TIER_MESSAGE, FreeTierUnavailable, run_uploads, validate_uploads
+from promo_finder import demo
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -60,13 +60,19 @@ def full_results(st):
 
 
 def live_demo(st):
-    st.caption("free tier, small demo; full runs via CLI")
-    key = setting(st, "GROQ_API_KEY", environment=True)
-    if not key:
-        st.info(FREE_TIER_MESSAGE)
+    st.caption("Small demo on the official Azure models; full runs via CLI.")
+    # Secrets come only from Streamlit secrets (or the environment) and stay in memory.
+    secrets = {name: setting(st, name, environment=True) for name in demo.SECRET_NAMES}
+    missing = demo.missing_secrets(secrets)
+    if missing:
+        st.info("live demo is not configured (missing secrets: " + ", ".join(missing) + "); full results are in Tab 1")
         return
-    st.write("Upload 1–3 UTF-8 episode .txt files in the input-pack format. Files and generated working data are deleted after processing. Text is sent to Groq when you start the run.")
-    st.caption("Use episode-001-Episode 1.txt style filenames. The free demo skips the comparison baseline and is not an evaluation.")
+    if demo.DAILY_CAP.remaining <= 0:
+        st.info(demo.DAILY_CAP_MESSAGE)
+        return
+    st.write("Upload 1–3 UTF-8 episode .txt files in the input-pack format. Files and generated working data are deleted after processing. Text is sent to Azure when you start the run.")
+    st.caption(f"Use episode-001-Episode 1.txt style filenames. Shared daily cap: {demo.DAILY_CAP.limit} episodes per UTC day across all visitors "
+               f"({demo.DAILY_CAP.remaining} left). The demo skips the comparison baseline and is not an evaluation.")
     uploads = st.file_uploader("Episodes", type=["txt"], accept_multiple_files=True)
     if not uploads:
         return
@@ -75,8 +81,8 @@ def live_demo(st):
         return
     entries = [(upload.name, upload.getvalue()) for upload in uploads]
     try:
-        validate_uploads(entries)
-    except DemoError as exc:
+        demo.validate_uploads(entries)
+    except demo.DemoError as exc:
         st.error(str(exc))
         return
     signature = hashlib.sha256()
@@ -92,13 +98,10 @@ def live_demo(st):
         st.session_state.pop("promo_result", None)
         with st.status("Processing episodes…", expanded=True) as status:
             try:
-                rows = run_uploads(entries, key)
-            except DemoError as exc:
+                rows = demo.run_uploads(entries, secrets)
+            except demo.DemoError as exc:
                 status.update(label="Run stopped", state="error")
-                if isinstance(exc, FreeTierUnavailable):
-                    st.info(FREE_TIER_MESSAGE)
-                else:
-                    st.error(str(exc))
+                (st.info if isinstance(exc, demo.DemoNotice) else st.error)(str(exc))
                 return
             st.session_state["promo_result"] = rows
             status.update(label=f"Complete: {len(rows)} promos", state="complete")
@@ -116,7 +119,7 @@ def main(st=None):
         import streamlit as st
     st.set_page_config(page_title="Promo finder demo", layout="wide")
     st.title("Promo finder")
-    saved, live = st.tabs(["Full results (Azure run)", "Try it live (free)"])
+    saved, live = st.tabs(["Full results (Azure run)", "Try it live"])
     with saved:
         full_results(st)
     with live:

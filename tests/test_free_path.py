@@ -114,8 +114,25 @@ def test_free_pipeline_completes_without_comparison_baseline(p07_cfg, episode_fa
     assert saved["plan"]["comparison_baseline"] == "skipped: free demo, not evaluation"
 
 
+def prepare(root, uploads):
+    """The CLI free path's real configuration in a temporary tree (the app no longer uses it, D106 a)."""
+    import shutil
+    data = root / "inputs"
+    data.mkdir()
+    for name, raw in uploads:
+        (data / name).write_bytes(raw)
+    (root / "config").mkdir()
+    shutil.copy2(ROOT / "config.yaml", root / "config.yaml")
+    for name in ("free.yaml", "score_formula.yaml", "eval_order.yaml", "baseline.yaml", "policy_terms.yaml"):
+        shutil.copy2(ROOT / "config" / name, root / "config" / name)
+    cfg = load_config(root / "config.yaml", overlay="config/free.yaml")
+    cfg.data_dir = data
+    cfg._run_name = "upload_demo"
+    return cfg
+
+
 def test_actual_free_config_completes_with_fake_provider(tmp_path, episode_factory, monkeypatch):
-    from promo_finder.demo import prepare, table_rows
+    from promo_finder.demo import table_rows
     cfg = prepare(tmp_path, [("episode-023-Episode 23.txt", b"invented fixture")])
     episode = episode_factory(23, [(i*5000, (i+1)*5000) for i in range(4)])
     monkeypatch.setattr(builder, "previous_episode", lambda *a: None)
@@ -142,7 +159,6 @@ def test_free_plan_exposes_an_oversize_picker_request(p07_cfg, episode_factory):
 
 
 def test_free_request_checks_reconcile_to_per_model_budgets(tmp_path, episode_factory):
-    from promo_finder.demo import prepare
     cfg = prepare(tmp_path, [(f"episode-{ep:03d}-Episode {ep}.txt", b"invented fixture") for ep in (23, 24)])
     episodes = [episode_factory(ep, [(i * 5000, (i + 1) * 5000) for i in range(4)]) for ep in (23, 24)]
     plan = pipeline.dry_run(cfg, episodes)
