@@ -51,8 +51,15 @@ def fingerprints(cfg: Config, *, required=False) -> dict:
         if required and frozen[rel] != FROZEN_SHA256[rel]:
             raise UnderstandingError("frozen config hash mismatch; stop for Hariom")
     config_path = cfg._config_path or cfg.root / "config.yaml"
-    return {"config_sha256": digest(config_path) if config_path.is_file() else None,
-            "score_formula_sha256": sha, "frozen_config_sha256": frozen}
+    result = {"config_sha256": digest(config_path) if config_path.is_file() else None,
+              "score_formula_sha256": sha, "frozen_config_sha256": frozen}
+    overlay = cfg._overlay_path
+    if overlay is not None:  # absent for v1 runs, so their manifests are unchanged
+        if required and not overlay.is_file():
+            raise UnderstandingError("config overlay missing")
+        result["overlay_path"] = overlay.relative_to(cfg.root).as_posix()
+        result["overlay_sha256"] = digest(overlay) if overlay.is_file() else None
+    return result
 
 
 def manifest(cfg: Config, episodes: list[int], **updates) -> dict:

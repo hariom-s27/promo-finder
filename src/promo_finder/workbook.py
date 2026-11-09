@@ -11,7 +11,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 
-from .labelling import BLOCKS, HELD_OUT, fmt_ms
+from .labelling import HELD_OUT_SPLIT, Split, fmt_ms
 from .models import Episode
 
 LABEL_ROWS = 60
@@ -42,6 +42,14 @@ _GREEN = PatternFill("solid", fgColor="C6EFCE")
 
 class WorkbookError(ValueError):
     """A safe error message that never includes workbook cell values."""
+
+
+def readme_lines(split: Split = HELD_OUT_SPLIT) -> tuple[str, ...]:
+    """README text; only the episode-scope line differs between splits."""
+    if split is HELD_OUT_SPLIT:
+        return README_LINES
+    scope = f"Use only the {split.name} episodes ({split.spec}); check-gold checks all span rules."
+    return tuple(scope if line.startswith("Use only held-out") else line for line in README_LINES)
 
 
 def template_header(root: Path) -> list[str]:
@@ -109,25 +117,25 @@ def _labels(wb: Workbook, header: list[str]) -> None:
 
 
 def write_workbook(episodes: list[Episode], out: Path, header: list[str],
-                   force: bool = False) -> tuple[int, int, int]:
+                   force: bool = False, split: Split = HELD_OUT_SPLIT) -> tuple[int, int, int]:
     """Write once without reading cells back. Return episode, line and scene counts."""
     if out.exists() and not force:
         raise FileExistsError("workbook already exists; use --force only to replace it deliberately")
     by_ep = {e.ep: e for e in episodes}
-    missing = [n for n in HELD_OUT if n not in by_ep]
+    missing = [n for n in split.episodes if n not in by_ep]
     if missing:
-        raise WorkbookError("missing held-out episodes: " + ",".join(f"E{n:02d}" for n in missing))
+        raise WorkbookError(f"missing {split.name} episodes: " + ",".join(f"E{n:02d}" for n in missing))
     wb = Workbook()
     wb.active.title = "README"
-    for instruction in README_LINES:
+    for instruction in readme_lines(split):
         wb["README"].append([instruction])
     wb["README"].column_dimensions["A"].width = 110
     wb.create_sheet("LABELS")
     lines = scenes = 0
-    for n in HELD_OUT:
+    for n in split.episodes:
         ep = by_ep[n]
         sheet = wb.create_sheet(f"E{n:02d}")
-        block = next(key for key, eps in BLOCKS.items() if n in eps)
+        block = next(key for key, eps in split.blocks.items() if n in eps)
         sheet.append([f"E{n:02d} \u2014 duration {fmt_ms(ep.duration_ms)} \u2014 block {block}"])
         sheet.merge_cells("A1:G1")
         sheet["A1"].font = Font(bold=True)
@@ -159,7 +167,7 @@ def write_workbook(episodes: list[Episode], out: Path, header: list[str],
             sheet.column_dimensions[col].width = width
     lookup = wb.create_sheet("LINES")
     lookup.append(["line_id", "ep", "start_ms", "end_ms"])
-    for n in HELD_OUT:
+    for n in split.episodes:
         for line in by_ep[n].lines:
             lookup.append([line.id, line.ep, line.start_ms, line.end_ms])
     lookup.sheet_state = "hidden"
@@ -183,7 +191,7 @@ def write_workbook(episodes: list[Episode], out: Path, header: list[str],
     with out.open("wb" if force else "xb") as f:
         wb.save(f)
     wb.close()
-    return len(HELD_OUT), lines, scenes
+    return len(split.episodes), lines, scenes
 
 
 def is_sealed(out: Path, hashes: Path) -> bool:

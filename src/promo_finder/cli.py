@@ -58,18 +58,38 @@ def _load_episodes(cfg: Config, args):
     return episodes
 
 
-def cmd_list_lines(cfg: Config, args) -> int:
-    from .labelling import parse_eps, write_labelling
+def _split_of(args):
+    from .labelling import SPLITS
 
+    return SPLITS[getattr(args, "split", None) or "held-out"]
+
+
+def cmd_list_lines(cfg: Config, args) -> int:
+    from .labelling import HELD_OUT_SPEC, SPLITS, parse_eps, write_labelling
+
+    sealed = {name: s for name, s in SPLITS.items() if name != "held-out"}   # fresh blocks A and B
+    chosen = getattr(args, "split", None)
+    split = sealed.get(chosen)
     try:
-        eps = parse_eps(args.eps)
+        eps = parse_eps(args.eps or (split.spec if split else HELD_OUT_SPEC))
     except ValueError as e:
         print(f"--eps: {e}", file=sys.stderr)
         return 2
+    if split and set(eps) - set(split.episodes):
+        print(f"--eps: the {split.name} split covers episodes {split.spec} only", file=sys.stderr)
+        return 2
+    if split is None:
+        touched = [s for s in sealed.values() if set(eps) & set(s.episodes)]
+        if touched:
+            if len(touched) > 1 or set(eps) - set(touched[0].episodes):
+                print("--eps: sealed fresh episodes (" + ", ".join(s.spec for s in touched)
+                      + ") cannot be mixed with others; use --split", file=sys.stderr)
+                return 2
+            split = touched[0]  # --eps alone inside one fresh split is routed to that split's folder
     episodes = _load_episodes(cfg, args)
     if episodes is None:
         return 2
-    out_dir = cfg.root / "outputs" / "labelling"
+    out_dir = cfg.root / "outputs" / "labelling" / (split.subdir if split else "")
     written, missing = write_labelling(episodes, eps, out_dir)
     for p, rows, scenes in written:
         print(f"{p.relative_to(cfg.root).as_posix()} rows={rows} scenes={scenes}")
@@ -93,8 +113,9 @@ def cmd_check_gold(cfg: Config, args) -> int:
         return 2
     index = build_index(episodes)
     speakers = {ln.speaker for e in episodes for ln in e.lines if ln.speaker}
-    rep = check_sheet(header, rows, index, speakers, cfg)
-    for line in format_report(rep, file_warnings):
+    split = _split_of(args)
+    rep = check_sheet(header, rows, index, speakers, cfg, split)
+    for line in format_report(rep, file_warnings, split):
         print(line)
     return 0 if rep.ok else 1
 
@@ -104,7 +125,8 @@ def cmd_make_workbook(cfg: Config, args) -> int:
 
     from .workbook import WorkbookError, template_header, write_workbook
 
-    out = cfg.root / Path(args.out)
+    split = _split_of(args)
+    out = cfg.root / Path(args.out or split.default_workbook)
     if out.exists() and not args.force:
         print("refused: workbook already exists; use --force only to replace it deliberately", file=sys.stderr)
         return 1
@@ -112,7 +134,7 @@ def cmd_make_workbook(cfg: Config, args) -> int:
     if episodes is None:
         return 2
     try:
-        eps, rows, scenes = write_workbook(episodes, out, template_header(cfg.root), args.force)
+        eps, rows, scenes = write_workbook(episodes, out, template_header(cfg.root), args.force, split)
     except FileExistsError:
         print("refused: workbook already exists; use --force only to replace it deliberately", file=sys.stderr)
         return 1
@@ -135,7 +157,9 @@ def cmd_export_gold(cfg: Config, args) -> int:
 
     from .workbook import WorkbookError, export_labels, template_header
 
-    xlsx, out = cfg.root / Path(args.xlsx), cfg.root / Path(args.out)
+    split = _split_of(args)
+    xlsx = cfg.root / Path(args.xlsx or split.default_workbook)
+    out = cfg.root / Path(args.out or split.default_gold)
     try:
         export_labels(xlsx, out, template_header(cfg.root), cfg.root / "eval" / "HASHES.md")
     except WorkbookError as e:
@@ -144,7 +168,7 @@ def cmd_export_gold(cfg: Config, args) -> int:
     except (OSError, BadZipFile, KeyError, ValueError):
         print("export-gold: unable to read workbook or write CSV; check paths and file access", file=sys.stderr)
         return 1
-    return cmd_check_gold(cfg, argparse.Namespace(csv=str(out), data_dir=args.data_dir))
+    return cmd_check_gold(cfg, argparse.Namespace(csv=str(out), data_dir=args.data_dir, split=split.name))
 
 
 def _scrub(cfg: Config, text: str) -> str:
@@ -325,19 +349,25 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--fail-fast", action="store_true", help="stop after a failed targeted ping")
     from .labelling import HELD_OUT_SPEC
 
+    split_help = ("label split (default held-out); fresh = episodes 31-34 and fresh_b = the block B episodes, "
+                  "files under outputs/labelling/fresh/ and fresh_b/")
     ll = sub.add_parser("list-lines", help="write outputs/labelling/E##_lines.md (labelling aid)")
-    ll.add_argument("--eps", default=HELD_OUT_SPEC, help=f"episode list/ranges (default {HELD_OUT_SPEC})")
+    ll.add_argument("--eps", default=None, help=f"episode list/ranges (default {HELD_OUT_SPEC}; 31-34 with --split fresh)")
+    ll.add_argument("--split", choices=("held-out", "fresh", "fresh_b"), default=None, help=split_help)
     ll.add_argument("--data-dir", help="override data_dir")
     cg = sub.add_parser("check-gold", help="validate a gold label sheet (eval/gold_rubric.md)")
     cg.add_argument("csv", help="path to the gold CSV")
+    cg.add_argument("--split", choices=("held-out", "fresh", "fresh_b"), default=None, help=split_help)
     cg.add_argument("--data-dir", help="override data_dir")
-    mw = sub.add_parser("make-workbook", help="create an Excel workbook for held-out labelling")
-    mw.add_argument("--out", default="outputs/labelling/gold_labelling.xlsx")
+    mw = sub.add_parser("make-workbook", help="create an Excel workbook for held-out (or fresh) labelling")
+    mw.add_argument("--out", default=None, help="default per split")
+    mw.add_argument("--split", choices=("held-out", "fresh", "fresh_b"), default=None, help=split_help)
     mw.add_argument("--data-dir", help="override data_dir")
     mw.add_argument("--force", action="store_true", help="deliberately replace an existing workbook")
     eg = sub.add_parser("export-gold", help="export LABELS columns A-M and run check-gold")
-    eg.add_argument("--xlsx", default="outputs/labelling/gold_labelling.xlsx")
-    eg.add_argument("--out", default="eval/gold.csv")
+    eg.add_argument("--xlsx", default=None, help="default per split")
+    eg.add_argument("--out", default=None, help="default per split (eval/gold.csv or eval/gold_fresh.csv)")
+    eg.add_argument("--split", choices=("held-out", "fresh", "fresh_b"), default=None, help=split_help)
     eg.add_argument("--data-dir", help="override data_dir")
     from .understanding import DEV_SPEC, cmd_understand
 
@@ -378,9 +408,13 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--allow-held-out", action="store_true")
     for command in (q, understand, find, build, judge, rank, baseline, pipeline):
         command.add_argument("--run", default="dev", help="output run name (default dev)")
+    for command in (build, rank, pipeline):
+        command.add_argument("--config-overlay", default=None,
+                             help="whitelisted overlay file (e.g. config/v2.yaml); only builder switches can change")
     args = ap.parse_args(argv)
     try:
-        cfg = load_config()
+        overlay = getattr(args, "config_overlay", None)
+        cfg = load_config(overlay=overlay) if overlay else load_config()
     except ConfigError as e:
         print(f"config error: {e}", file=sys.stderr)
         return 2

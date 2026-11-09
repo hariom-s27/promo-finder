@@ -1,0 +1,979 @@
+{
+  "block": "b",
+  "episodes": [
+    15,
+    16,
+    17,
+    35
+  ],
+  "K": 8,
+  "G": 4,
+  "negatives": 1,
+  "label": "result",
+  "scoring_runs": 1,
+  "definitions": {
+    "recall_at_K": "greedy one-to-one matches / positive gold; K=2*|G|; primary tau=0.5",
+    "matching": "rank order through K; highest set tIoU; ties lowest gold_id; integer milliseconds",
+    "hook_hit": "matched at tau=0.5 and first-segment start within 2000 ms in same episode / |G|",
+    "hook_found": "hook-only greedy matches in top K / |G|; closest start, then lowest gold_id",
+    "precision_at_10": "matches from top-K greedy matching at positions <=10 / min(10,|L|); K<10 stays unchanged",
+    "negative_hit_rate": "negatives overlapping any top-K prediction at tIoU>=0.5 / negative gold; not one-to-one",
+    "recall_by_grade": "matched positives / positives of each grade; descriptive",
+    "wilson95": "Wilson 95%, z=1.959964; n=0 is undefined",
+    "paired": "aligned per-gold vectors; exact two-sided McNemar; paired bootstrap B=10000, seed=12345, linear percentile 95%",
+    "baseline_sensitivity": "stored snapped baseline order with 20-60 s check off, restricted to the block"
+  },
+  "validation": {
+    "errors": 0,
+    "rationale_name_hits": 0,
+    "warnings": [
+      "WARNING total positives 4 outside 6-10 (~8)"
+    ]
+  },
+  "systems": {
+    "v2": {
+      "L_size": 26,
+      "K": 8,
+      "K_used": 8,
+      "G_size": 4,
+      "by_tau": {
+        "0.5": {
+          "recall_at_K": {
+            "k": 1,
+            "n": 4,
+            "value": 0.25,
+            "wilson95": [
+              0.04558726029536886,
+              0.6993581599030918
+            ]
+          },
+          "precision_at_10": {
+            "k": 1,
+            "n": 10,
+            "value": 0.1,
+            "wilson95": [
+              0.017876212896073995,
+              0.4041500295247722
+            ]
+          },
+          "matches": [
+            [
+              2,
+              "P05-E15-004",
+              "FB01",
+              0.683594
+            ]
+          ]
+        },
+        "0.3": {
+          "recall_at_K": {
+            "k": 1,
+            "n": 4,
+            "value": 0.25,
+            "wilson95": [
+              0.04558726029536886,
+              0.6993581599030918
+            ]
+          },
+          "precision_at_10": {
+            "k": 1,
+            "n": 10,
+            "value": 0.1,
+            "wilson95": [
+              0.017876212896073995,
+              0.4041500295247722
+            ]
+          },
+          "matches": [
+            [
+              1,
+              "P05-E15-003",
+              "FB01",
+              0.4375
+            ]
+          ]
+        },
+        "0.7": {
+          "recall_at_K": {
+            "k": 0,
+            "n": 4,
+            "value": 0.0,
+            "wilson95": [
+              0.0,
+              0.4898908403969213
+            ]
+          },
+          "precision_at_10": {
+            "k": 0,
+            "n": 10,
+            "value": 0.0,
+            "wilson95": [
+              0.0,
+              0.2775328030260577
+            ]
+          },
+          "matches": []
+        }
+      },
+      "primary": {
+        "recall_at_K": {
+          "k": 1,
+          "n": 4,
+          "value": 0.25,
+          "wilson95": [
+            0.04558726029536886,
+            0.6993581599030918
+          ]
+        },
+        "hook_hit": {
+          "k": 0,
+          "n": 4,
+          "value": 0.0,
+          "wilson95": [
+            0.0,
+            0.4898908403969213
+          ]
+        },
+        "hook_found": {
+          "k": 0,
+          "n": 4,
+          "value": 0.0,
+          "wilson95": [
+            0.0,
+            0.4898908403969213
+          ]
+        },
+        "precision_at_10": {
+          "k": 1,
+          "n": 10,
+          "value": 0.1,
+          "wilson95": [
+            0.017876212896073995,
+            0.4041500295247722
+          ]
+        },
+        "recall_by_grade": {
+          "3": {
+            "k": 1,
+            "n": 3,
+            "value": 0.3333333333333333,
+            "wilson95": [
+              0.06149194402093078,
+              0.7923404011921757
+            ]
+          },
+          "2": {
+            "k": 0,
+            "n": 1,
+            "value": 0.0,
+            "wilson95": [
+              0.0,
+              0.7934506882081973
+            ]
+          },
+          "1": {
+            "k": 0,
+            "n": 0,
+            "value": null,
+            "wilson95": "n/a (n=0)"
+          }
+        },
+        "negative_hit_rate": {
+          "k": 0,
+          "n": 1,
+          "value": 0.0,
+          "wilson95": [
+            0.0,
+            0.7934506882081973
+          ]
+        },
+        "hook_hit_gold_ids": [],
+        "hook_found_pairs": [],
+        "negative_hit_gold_ids": []
+      },
+      "matched_vector": {
+        "FB01": 1,
+        "FB02": 0,
+        "FB03": 0,
+        "FB04": 0
+      }
+    },
+    "v1": {
+      "L_size": 14,
+      "K": 8,
+      "K_used": 8,
+      "G_size": 4,
+      "by_tau": {
+        "0.5": {
+          "recall_at_K": {
+            "k": 1,
+            "n": 4,
+            "value": 0.25,
+            "wilson95": [
+              0.04558726029536886,
+              0.6993581599030918
+            ]
+          },
+          "precision_at_10": {
+            "k": 1,
+            "n": 10,
+            "value": 0.1,
+            "wilson95": [
+              0.017876212896073995,
+              0.4041500295247722
+            ]
+          },
+          "matches": [
+            [
+              6,
+              "P05-E15-001",
+              "FB01",
+              0.529412
+            ]
+          ]
+        },
+        "0.3": {
+          "recall_at_K": {
+            "k": 2,
+            "n": 4,
+            "value": 0.5,
+            "wilson95": [
+              0.15003898774401986,
+              0.8499610122559802
+            ]
+          },
+          "precision_at_10": {
+            "k": 2,
+            "n": 10,
+            "value": 0.2,
+            "wilson95": [
+              0.05668215093776685,
+              0.5098375308778678
+            ]
+          },
+          "matches": [
+            [
+              4,
+              "P05-E15-004",
+              "FB01",
+              0.445378
+            ],
+            [
+              8,
+              "P05-E35-001",
+              "FB04",
+              0.44186
+            ]
+          ]
+        },
+        "0.7": {
+          "recall_at_K": {
+            "k": 0,
+            "n": 4,
+            "value": 0.0,
+            "wilson95": [
+              0.0,
+              0.4898908403969213
+            ]
+          },
+          "precision_at_10": {
+            "k": 0,
+            "n": 10,
+            "value": 0.0,
+            "wilson95": [
+              0.0,
+              0.2775328030260577
+            ]
+          },
+          "matches": []
+        }
+      },
+      "primary": {
+        "recall_at_K": {
+          "k": 1,
+          "n": 4,
+          "value": 0.25,
+          "wilson95": [
+            0.04558726029536886,
+            0.6993581599030918
+          ]
+        },
+        "hook_hit": {
+          "k": 0,
+          "n": 4,
+          "value": 0.0,
+          "wilson95": [
+            0.0,
+            0.4898908403969213
+          ]
+        },
+        "hook_found": {
+          "k": 0,
+          "n": 4,
+          "value": 0.0,
+          "wilson95": [
+            0.0,
+            0.4898908403969213
+          ]
+        },
+        "precision_at_10": {
+          "k": 1,
+          "n": 10,
+          "value": 0.1,
+          "wilson95": [
+            0.017876212896073995,
+            0.4041500295247722
+          ]
+        },
+        "recall_by_grade": {
+          "3": {
+            "k": 1,
+            "n": 3,
+            "value": 0.3333333333333333,
+            "wilson95": [
+              0.06149194402093078,
+              0.7923404011921757
+            ]
+          },
+          "2": {
+            "k": 0,
+            "n": 1,
+            "value": 0.0,
+            "wilson95": [
+              0.0,
+              0.7934506882081973
+            ]
+          },
+          "1": {
+            "k": 0,
+            "n": 0,
+            "value": null,
+            "wilson95": "n/a (n=0)"
+          }
+        },
+        "negative_hit_rate": {
+          "k": 0,
+          "n": 1,
+          "value": 0.0,
+          "wilson95": [
+            0.0,
+            0.7934506882081973
+          ]
+        },
+        "hook_hit_gold_ids": [],
+        "hook_found_pairs": [],
+        "negative_hit_gold_ids": []
+      },
+      "matched_vector": {
+        "FB01": 1,
+        "FB02": 0,
+        "FB03": 0,
+        "FB04": 0
+      }
+    },
+    "baseline": {
+      "L_size": 12,
+      "K": 8,
+      "K_used": 8,
+      "G_size": 4,
+      "by_tau": {
+        "0.5": {
+          "recall_at_K": {
+            "k": 3,
+            "n": 4,
+            "value": 0.75,
+            "wilson95": [
+              0.3006418400969081,
+              0.954412739704631
+            ]
+          },
+          "precision_at_10": {
+            "k": 3,
+            "n": 10,
+            "value": 0.3,
+            "wilson95": [
+              0.10779126655639398,
+              0.6032218546540291
+            ]
+          },
+          "matches": [
+            [
+              2,
+              "BL-E16-1",
+              "FB02",
+              0.639493
+            ],
+            [
+              5,
+              "BL-E15-2",
+              "FB01",
+              0.609244
+            ],
+            [
+              7,
+              "BL-E17-2",
+              "FB03",
+              0.956897
+            ]
+          ]
+        },
+        "0.3": {
+          "recall_at_K": {
+            "k": 3,
+            "n": 4,
+            "value": 0.75,
+            "wilson95": [
+              0.3006418400969081,
+              0.954412739704631
+            ]
+          },
+          "precision_at_10": {
+            "k": 3,
+            "n": 10,
+            "value": 0.3,
+            "wilson95": [
+              0.10779126655639398,
+              0.6032218546540291
+            ]
+          },
+          "matches": [
+            [
+              2,
+              "BL-E16-1",
+              "FB02",
+              0.639493
+            ],
+            [
+              5,
+              "BL-E15-2",
+              "FB01",
+              0.609244
+            ],
+            [
+              7,
+              "BL-E17-2",
+              "FB03",
+              0.956897
+            ]
+          ]
+        },
+        "0.7": {
+          "recall_at_K": {
+            "k": 1,
+            "n": 4,
+            "value": 0.25,
+            "wilson95": [
+              0.04558726029536886,
+              0.6993581599030918
+            ]
+          },
+          "precision_at_10": {
+            "k": 1,
+            "n": 10,
+            "value": 0.1,
+            "wilson95": [
+              0.017876212896073995,
+              0.4041500295247722
+            ]
+          },
+          "matches": [
+            [
+              7,
+              "BL-E17-2",
+              "FB03",
+              0.956897
+            ]
+          ]
+        }
+      },
+      "primary": {
+        "recall_at_K": {
+          "k": 3,
+          "n": 4,
+          "value": 0.75,
+          "wilson95": [
+            0.3006418400969081,
+            0.954412739704631
+          ]
+        },
+        "hook_hit": {
+          "k": 1,
+          "n": 4,
+          "value": 0.25,
+          "wilson95": [
+            0.04558726029536886,
+            0.6993581599030918
+          ]
+        },
+        "hook_found": {
+          "k": 1,
+          "n": 4,
+          "value": 0.25,
+          "wilson95": [
+            0.04558726029536886,
+            0.6993581599030918
+          ]
+        },
+        "precision_at_10": {
+          "k": 3,
+          "n": 10,
+          "value": 0.3,
+          "wilson95": [
+            0.10779126655639398,
+            0.6032218546540291
+          ]
+        },
+        "recall_by_grade": {
+          "3": {
+            "k": 2,
+            "n": 3,
+            "value": 0.6666666666666666,
+            "wilson95": [
+              0.2076595988078242,
+              0.9385080559790691
+            ]
+          },
+          "2": {
+            "k": 1,
+            "n": 1,
+            "value": 1.0,
+            "wilson95": [
+              0.2065493117918027,
+              1.0
+            ]
+          },
+          "1": {
+            "k": 0,
+            "n": 0,
+            "value": null,
+            "wilson95": "n/a (n=0)"
+          }
+        },
+        "negative_hit_rate": {
+          "k": 1,
+          "n": 1,
+          "value": 1.0,
+          "wilson95": [
+            0.2065493117918027,
+            1.0
+          ]
+        },
+        "hook_hit_gold_ids": [
+          "FB03"
+        ],
+        "hook_found_pairs": [
+          [
+            7,
+            "BL-E17-2",
+            "FB03",
+            0.956897
+          ]
+        ],
+        "negative_hit_gold_ids": [
+          "FB05"
+        ]
+      },
+      "matched_vector": {
+        "FB01": 1,
+        "FB02": 1,
+        "FB03": 1,
+        "FB04": 0
+      }
+    },
+    "baseline_sensitivity_no_20_60": {
+      "L_size": 12,
+      "K": 8,
+      "K_used": 8,
+      "G_size": 4,
+      "by_tau": {
+        "0.5": {
+          "recall_at_K": {
+            "k": 3,
+            "n": 4,
+            "value": 0.75,
+            "wilson95": [
+              0.3006418400969081,
+              0.954412739704631
+            ]
+          },
+          "precision_at_10": {
+            "k": 3,
+            "n": 10,
+            "value": 0.3,
+            "wilson95": [
+              0.10779126655639398,
+              0.6032218546540291
+            ]
+          },
+          "matches": [
+            [
+              2,
+              "BL-E16-1",
+              "FB02",
+              0.639493
+            ],
+            [
+              5,
+              "BL-E15-2",
+              "FB01",
+              0.609244
+            ],
+            [
+              7,
+              "BL-E17-2",
+              "FB03",
+              0.956897
+            ]
+          ]
+        },
+        "0.3": {
+          "recall_at_K": {
+            "k": 3,
+            "n": 4,
+            "value": 0.75,
+            "wilson95": [
+              0.3006418400969081,
+              0.954412739704631
+            ]
+          },
+          "precision_at_10": {
+            "k": 3,
+            "n": 10,
+            "value": 0.3,
+            "wilson95": [
+              0.10779126655639398,
+              0.6032218546540291
+            ]
+          },
+          "matches": [
+            [
+              2,
+              "BL-E16-1",
+              "FB02",
+              0.639493
+            ],
+            [
+              5,
+              "BL-E15-2",
+              "FB01",
+              0.609244
+            ],
+            [
+              7,
+              "BL-E17-2",
+              "FB03",
+              0.956897
+            ]
+          ]
+        },
+        "0.7": {
+          "recall_at_K": {
+            "k": 1,
+            "n": 4,
+            "value": 0.25,
+            "wilson95": [
+              0.04558726029536886,
+              0.6993581599030918
+            ]
+          },
+          "precision_at_10": {
+            "k": 1,
+            "n": 10,
+            "value": 0.1,
+            "wilson95": [
+              0.017876212896073995,
+              0.4041500295247722
+            ]
+          },
+          "matches": [
+            [
+              7,
+              "BL-E17-2",
+              "FB03",
+              0.956897
+            ]
+          ]
+        }
+      },
+      "primary": {
+        "recall_at_K": {
+          "k": 3,
+          "n": 4,
+          "value": 0.75,
+          "wilson95": [
+            0.3006418400969081,
+            0.954412739704631
+          ]
+        },
+        "hook_hit": {
+          "k": 1,
+          "n": 4,
+          "value": 0.25,
+          "wilson95": [
+            0.04558726029536886,
+            0.6993581599030918
+          ]
+        },
+        "hook_found": {
+          "k": 1,
+          "n": 4,
+          "value": 0.25,
+          "wilson95": [
+            0.04558726029536886,
+            0.6993581599030918
+          ]
+        },
+        "precision_at_10": {
+          "k": 3,
+          "n": 10,
+          "value": 0.3,
+          "wilson95": [
+            0.10779126655639398,
+            0.6032218546540291
+          ]
+        },
+        "recall_by_grade": {
+          "3": {
+            "k": 2,
+            "n": 3,
+            "value": 0.6666666666666666,
+            "wilson95": [
+              0.2076595988078242,
+              0.9385080559790691
+            ]
+          },
+          "2": {
+            "k": 1,
+            "n": 1,
+            "value": 1.0,
+            "wilson95": [
+              0.2065493117918027,
+              1.0
+            ]
+          },
+          "1": {
+            "k": 0,
+            "n": 0,
+            "value": null,
+            "wilson95": "n/a (n=0)"
+          }
+        },
+        "negative_hit_rate": {
+          "k": 1,
+          "n": 1,
+          "value": 1.0,
+          "wilson95": [
+            0.2065493117918027,
+            1.0
+          ]
+        },
+        "hook_hit_gold_ids": [
+          "FB03"
+        ],
+        "hook_found_pairs": [
+          [
+            7,
+            "BL-E17-2",
+            "FB03",
+            0.956897
+          ]
+        ],
+        "negative_hit_gold_ids": [
+          "FB05"
+        ]
+      },
+      "matched_vector": {
+        "FB01": 1,
+        "FB02": 1,
+        "FB03": 1,
+        "FB04": 0
+      }
+    }
+  },
+  "paired": {
+    "v2_vs_v1": {
+      "n": 4,
+      "mcnemar": {
+        "tool_only": 0,
+        "baseline_only": 0,
+        "discordant": 0,
+        "p_two_sided": 1.0
+      },
+      "bootstrap": {
+        "mean_diff": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "B": 10000,
+        "seed": 12345,
+        "n": 4
+      }
+    },
+    "v2_vs_baseline": {
+      "n": 4,
+      "mcnemar": {
+        "tool_only": 0,
+        "baseline_only": 2,
+        "discordant": 2,
+        "p_two_sided": 0.5
+      },
+      "bootstrap": {
+        "mean_diff": -0.5,
+        "ci95": [
+          -1.0,
+          0.0
+        ],
+        "B": 10000,
+        "seed": 12345,
+        "n": 4
+      }
+    }
+  },
+  "baseline_context": {
+    "invented_timestamps": 0,
+    "dropped": 0,
+    "drop_reasons": {},
+    "sensitivity_dropped": 0,
+    "sources_sha256": {
+      "outputs/runs/full/baseline/baseline_E15.json": "b6458dfbbcf5c65c62d064c337d2bf17e169ac0385afa61f683121369a14e3cb",
+      "outputs/runs/full/baseline/baseline_E16.json": "a0c548523013145e05e2a678159db5a5066277e728e8ecd0025f075aade3ebb5",
+      "outputs/runs/full/baseline/baseline_E17.json": "8f7a299447d97291b3e78d13791905f5524f92238d423f01dfa4124499a1504c",
+      "outputs/runs/full/baseline/baseline_E35.json": "e22a4ba9e414269ea1974b714d825b7f4ba522dc1caab05ef5eb2009ded8611e"
+    }
+  },
+  "statement": "Separate block; never pooled. Small sample; descriptive only. Single labeller had read the show.",
+  "block_b_disclosure": "Episodes 15-17 were pilot episodes: only counts and a few promo IDs seen, no spans or content. Selected for v1/v2 candidate differences; not random. G=4; one gold=25 percentage points.",
+  "provenance": {
+    "HASHES_rows": [
+      {
+        "path": "eval/match_rule.md",
+        "sha256_lf": "d30dd8cd644512474b7b70f113692615e3a2123d4c1b1cfe4f7b20c1b66ff1e2"
+      },
+      {
+        "path": "eval/gold_rubric.md",
+        "sha256_lf": "6f7b5161a66d857e913e5f73715f6b36c129d4cd57b69cd7d618e2b53f5550c0"
+      },
+      {
+        "path": "eval/gold_template.csv",
+        "sha256_lf": "bb794d8a826bbc62288c30d16010e162c647ae5bdd19673dc22ebaf422bd8391"
+      },
+      {
+        "path": "eval/gold.csv",
+        "sha256_lf": "e1a2287d724e7a46d2606c79562b6414d3d0a55324a276e189c5c183ef5bbdd4"
+      },
+      {
+        "path": "outputs/gold_sealed/gold_longlist_v1.csv",
+        "sha256_lf": "df6d7be38839630dcbf61cd66eb97346658fb46a27c1db52249d65edf7c2d03e"
+      },
+      {
+        "path": "outputs/ai_labels/claude_v1.csv",
+        "sha256_lf": "fafdcc025d1154deed6571e5efa7d724d880933266d3eb4650f713942b7c7acb"
+      },
+      {
+        "path": "outputs/ai_labels/gpt_v1.csv",
+        "sha256_lf": "9229fa4625a4740fdb313184110084dce9f89e8e8d83e0f5ff9f00feb3c08573"
+      },
+      {
+        "path": "config/score_formula.yaml",
+        "sha256_lf": "8f76ddf50855441a2b9dfc1e60b7f4f0db3cca308a8a37f22c7f25374b5638f3"
+      },
+      {
+        "path": "config/eval_order.yaml",
+        "sha256_lf": "71d0a4042e95ec90a5ec509f28eac447721d3e951ecb0259cb376520db734ab8"
+      },
+      {
+        "path": "config/baseline.yaml",
+        "sha256_lf": "57ccd891e430926d0b2bc2766b4488759a32f3408def2bfdab684b8e37ca7cef"
+      },
+      {
+        "path": "config/v2.yaml",
+        "sha256_lf": "e09761554e5407f6d2b9a815c15f136942124b874fa048c192c221c058ece2f5"
+      },
+      {
+        "path": "eval/match_rule_fresh.md",
+        "sha256_lf": "ba2a39d027a25ee19ea96a7517a44e637373a0efd05945ec04c34e843e6a884a"
+      },
+      {
+        "path": "eval/match_rule_fresh_b.md",
+        "sha256_lf": "545ee2060cc7b640dcb2559d950a4dadbdd655411ba7317a4d28b66049acfa5d"
+      },
+      {
+        "path": "eval/gold_fresh.csv",
+        "sha256_lf": "40db75a8ffd04cb4d274f44f77415470cbf1e95b066ca448166922f10611a0e7"
+      },
+      {
+        "path": "eval/gold_fresh.csv",
+        "sha256_lf": "40db75a8ffd04cb4d274f44f77415470cbf1e95b066ca448166922f10611a0e7"
+      },
+      {
+        "path": "eval/gold_fresh_b.csv",
+        "sha256_lf": "5549ed984adeb3cbd28a6c1d7f2590d44b19e02001d513784f1c6aa838a01fc5"
+      }
+    ],
+    "duplicate_rows": {
+      "eval/gold_fresh.csv": 2
+    },
+    "seal_sha256": "b5ed3ab3a7e62a90302f0a806aba6a641abf146220945a0e566825a8e4ea9bbb",
+    "raw_inputs": {
+      "outputs/runs/full_v2/evaluation/tool_v2_held_out_L.json": "00e36b413fc36b687ebbbab5ceee6391b8f7e53ed11dbb0474103a2697d8afe2",
+      "outputs/runs/full_v2/evaluation/tool_v2_fresh_L.json": "493cb66b03ffae638e2598ca307ac403064fdf983142724ea0ee6b46bb3ef00d",
+      "outputs/runs/full_v2/evaluation/tool_v1_fresh_L.json": "0f7bd0b4c848ae226bc562769df37207c307578e374e53c376234ae53b27984c",
+      "outputs/runs/full_v2/evaluation/baseline_fresh_L.json": "173b3c69f451530c0c7497211bfb0b59f8219d3ba19597c62e9de9f7dfe68af1",
+      "outputs/runs/full_v2/evaluation/tool_v2_fresh_b_L.json": "90dca8f9389f0f4a08a919a55e970ba8417ce4e02a037fe16d6a2e6ba60cb1f1",
+      "outputs/runs/full_v2/evaluation/tool_v1_fresh_b_L.json": "16a221f264702fe42a1f9886e1b203b6b0c0a48a4ab83b49a331701293b84783",
+      "outputs/runs/full_v2/evaluation/baseline_fresh_b_L.json": "b4a58f286fa9db7e8e8ba1be2b0d7063d3c65efd3d94669c698c138ca1e00b4a",
+      "outputs/runs/full/evaluation/tool_held_out_L.json": "0b02288383a37218cd8376d6402ec9cd5de6b6e1d60c3df239311fba5cf6417d",
+      "outputs/runs/full/evaluation/baseline_held_out_L.json": "6e67ee24ffc1b605f0eb0d612e4e59f68ac794d7e9b1106e83b073c4bc89528c",
+      "outputs/runs/full/ranked/promos_dev.json": "62f1f10d486c13721621c39e077257aa1726251978f08d1bc64d063570c0c77f",
+      "outputs/runs/full_v2/ranked/promos_dev.json": "e544906c76e0b4e15caf9314872bafcbc192fc79f2838059662bd33529295b66",
+      "outputs/runs/full/baseline/baseline_order.json": "79cd6c4358472b28998e6980395fed93d40e9d94bab0115a96c21cbc971e804b",
+      "config/v2.yaml": "e09761554e5407f6d2b9a815c15f136942124b874fa048c192c221c058ece2f5",
+      "eval/HASHES.md": "caff0f75944b91487c38371da447ab3445207b70f7d54e549a5340fe6f33146b",
+      "outputs/runs/full_v2/evaluation/L_seal.json": "b5ed3ab3a7e62a90302f0a806aba6a641abf146220945a0e566825a8e4ea9bbb",
+      "outputs/runs/full_v2/run_manifest.json": "1bf72339286007d4b576d693422ab693086b55af1927f3215da8b73a75a4a7f5",
+      "outputs/eval/metrics.json": "23f5aa90e8c691633da71f3aaf7e17bc64b10dd37f6e8891d9b5155a2cd1f927"
+    },
+    "code_sha256": {
+      "src/promo_finder/__init__.py": "15197e50450e8d03fe4e51c223a9aa624046a9c30f8d7f57a03c70b5baa8dd78",
+      "src/promo_finder/__main__.py": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
+      "src/promo_finder/accounting.py": "6ed81619f94eeab8c0a900b5bc1cf861f571edc610958f64faf5e90859890678",
+      "src/promo_finder/baseline.py": "824bdaa836494b0d5e272afb7a355a7bab7f06f7445b2b12899a98754dc5013e",
+      "src/promo_finder/budget.py": "a59f4a8266ed03542d726e7f3458eaafc25d29e98ba547ee66afd0c733c3ff87",
+      "src/promo_finder/builder.py": "f301d4463f9fbe14bc30c9a19e0e2e0c7f3c803a4256a58c3b7eb1c8f4455813",
+      "src/promo_finder/characters.py": "06ed25dace16e2df93c1ec6bb9ca5696fdde332dcf13ec9a922cd5a8ea727298",
+      "src/promo_finder/checker.py": "9db757a68d61d5083c110cd5fc8f2eb6412156a8cf4d2b952e54a49da38cb979",
+      "src/promo_finder/cli.py": "242d18016b233c871ac709d4a411f84e4d51d847656f7c5d4900f19ed66d6473",
+      "src/promo_finder/config.py": "1100b192401ab7e71977e6949c75f6e765ffda4d1291782e2c3a4f5361ac5f08",
+      "src/promo_finder/diagnostic.py": "c3acb4bfb021f7128003fc994efc29b8aca19bbb866f2bbf77693d3063edd929",
+      "src/promo_finder/estimation.py": "6c87224286b9f7536e05b3cc2c378db8957d01ca6e6fc15e9178d431867eb32f",
+      "src/promo_finder/evaluation_lists.py": "40ab81f450ff27366839c6d49aa54386efea1b3a1561faf7081bbeb4733a5d9d",
+      "src/promo_finder/finding.py": "771beaa0f70fb536c62ac862390213804c7f97fd0e9e49e849356ce7037b667f",
+      "src/promo_finder/gold.py": "15374e1c517b20605971ee330819dd75d067c90fe65bbfe5067ff8b8c0f4880d",
+      "src/promo_finder/header.py": "3fa7d5c9487817cfc37e07933daef0e8d587e34df82cb593f5f2fad7c3bbd85b",
+      "src/promo_finder/intensity.py": "e0142f0edfb9a17c279a1da5b14019c903276a104d7fcc727743f7fc6d4c4423",
+      "src/promo_finder/judge_arms.py": "405175fa590787f0818fc56bcfdb08e7f88bec49bc0519a6142e8d61fd4ce920",
+      "src/promo_finder/judge_experiments.py": "1995c4e1171f237bf69baa9457d8c7b462417eaa24f920796ed602682d3a1936",
+      "src/promo_finder/judge_prompts.py": "a1f4d1a73db6500ffb9c9124d79ca1abbc795733d35f02bd6dd237963b0b6ba8",
+      "src/promo_finder/judging.py": "22780bdf522f747a5c58a6561e139a2f23a04bc56843f52f87487d16569dd5ef",
+      "src/promo_finder/labelling.py": "1c0ec69ed99b90ce4f4b3bafedbd43aa12b5684d492b2a44a28ba07413bd0a6c",
+      "src/promo_finder/llm.py": "006a8d83054cef97f9d0f9cb50669d56f213c8e4dc2ce5256e50d0f003dbeecb",
+      "src/promo_finder/models.py": "076bd9cb7830288e24ce866e607ec43db171aafbdd6f593c2b50797df1f63ec9",
+      "src/promo_finder/moments.py": "9c8444e246fd75f4c6e79cf0abfa567aa8657ad727a169f00fcb062258aed556",
+      "src/promo_finder/parser.py": "58fa23255d02bd85227d2ba90bea2ad15ba56315773c09f8769a9d86b01a9fee",
+      "src/promo_finder/pipeline.py": "a806be90ff82ae2e2624d9f245938d0c8235bd6553123a6dac36e15404aa6320",
+      "src/promo_finder/policy.py": "72ccd958da4c5e74c8fe80469af4df6f6403f3e10f39525f9c3a7f9542082319",
+      "src/promo_finder/provider_protocol.py": "65359e7e4091ad2f716c245c2cac55ac467cff7a64e09c18102b919de25182ec",
+      "src/promo_finder/ranking.py": "3cd795025b3a22730ea2f3cc5a6a734e50a7cc90f15cf474bdb573bd38823006",
+      "src/promo_finder/reveals.py": "7e885b09128121efb72cc0102fc14e405da1c70508b82b17a85176b87654dd66",
+      "src/promo_finder/run_context.py": "e6c7f070f240ea80b3c9d63eea5a308969ec375e3ab70e850b887c2be8e556db",
+      "src/promo_finder/scoring.py": "9a1933854f279a8dfcb8821b7cb18de59d8529859eaa5f439b898c5761197798",
+      "src/promo_finder/tiou.py": "803da381022bd6175e79fd3b26e1c5d22685f4f0e4883ade411b6866c4177719",
+      "src/promo_finder/understanding.py": "74ed920131535a78f3317f90e2f81c94cbb0c1e6698b2ba08d746dd7540ea572",
+      "src/promo_finder/understanding_common.py": "9a406f9c036cd2c1cf65c44586c6990e0c832a2b4ce4f2721efef19a3c8fb69e",
+      "src/promo_finder/validate.py": "b8af8606cbbc45d1aba817c0c6b246c2e60f51c2935e3ed6a99104f10aadb818",
+      "src/promo_finder/workbook.py": "d8dbbe59e7cfd7e247cfbcc9ac8fc02c23b885a507ffb38556dea2be8d212857",
+      "tools/score_p08b.py": "617d00899d8ce095232c5700153d734194ae46f16c317c51629929a6e4f20dbf"
+    }
+  }
+}

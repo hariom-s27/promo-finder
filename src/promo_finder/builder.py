@@ -99,6 +99,64 @@ def _limits(cfg: Config) -> PromoCfg:
     return cfg.promo.model_copy(update={"max_segments": min(cfg.promo.max_segments, cfg.builder.max_segments)})
 
 
+RESOLUTION_END_WINDOW_MS = 3000   # F5b, fixed by decision: no other window size
+RESOLUTION_FLAG_PENALTY = 0.5     # F5b, pre_score only; the score formula (S) is frozen
+
+
+def resolution_confidence(reveal_data: dict, resolution_ids: set[str]) -> dict[str, str]:
+    """line_id -> highest confidence of its blocking resolution marks."""
+    rank = {"low": 0, "medium": 1, "high": 2}
+    out: dict[str, str] = {}
+    for mark in reveal_data["marks"]:
+        if mark["type"] == "resolution" and mark["line_id"] in resolution_ids:
+            if mark["line_id"] not in out or rank[mark["confidence"]] > rank[out[mark["line_id"]]]:
+                out[mark["line_id"]] = mark["confidence"]
+    return out
+
+
+def resolution_positions(segments, index, confidence_of, window_ms: int = RESOLUTION_END_WINDOW_MS,
+                         rule: str = "overlap") -> list[dict]:
+    """Blocking resolution lines inside a span: which segment, how many seconds of the clip follow the line,
+    and whether it sits at the end (the final line, or inside the last `window_ms` of the final segment)."""
+    out = []
+    total = len(segments)
+    for number, seg in enumerate(segments):
+        later = sum(s.end_ms - s.start_ms for s in segments[number + 1:])
+        last = number == total - 1
+        for line_id in seg.line_ids:
+            if line_id not in confidence_of:
+                continue
+            line = index[line_id]
+            final_line = last and line_id == seg.line_ids[-1]
+            inside = last and (line.end_ms > seg.end_ms - window_ms if rule == "overlap"
+                               else line.start_ms >= seg.end_ms - window_ms)
+            out.append({"line_id": line_id, "confidence": confidence_of[line_id], "segment": number + 1, "of": total,
+                        "clip_seconds_after": round((seg.end_ms - line.end_ms + later) / 1000, 2),
+                        "final_line": final_line, "at_end": bool(final_line or inside)})
+    return out
+
+
+def extend_end(episode: Episode, index, hook_id: str, cliff_id: str, cfg: Config, resolution_ids: set[str],
+               cliff_ids: set[str]):
+    """F2. Extend a TOO_SHORT single span by whole lines after its cliff line until it reaches the minimum
+    length. Stops (None) before a blocking resolution line and at the next cliff line, which it may include.
+    The end side only; no start-side fallback."""
+    positions = {line.id: i for i, line in enumerate(episode.lines)}
+    limits = _limits(cfg)
+    for line in episode.lines[positions[cliff_id] + 1:]:
+        if line.id in resolution_ids:
+            return None
+        candidate = (hook_id, line.id)
+        checked = check_promo([candidate], index, limits)
+        if checked.ok:
+            return candidate
+        if checked.errors != ["TOO_SHORT"]:
+            return None
+        if line.id in cliff_ids:
+            return None
+    return None
+
+
 def _measure(spans, index, cfg: Config):
     return check_promo(spans, index, PromoCfg(min_s=0, max_s=cfg.promo.max_s, max_segments=2))
 
@@ -216,6 +274,14 @@ def build_episode(episode: Episode, moment_data: dict, reveal_data: dict, intens
                "recap": {"method": recap_method, "recap_lines": len(recap_ids),
                          "flagged_generated": {"similarity": 0, "fallback": 0},
                          "flagged_kept": {"similarity": 0, "fallback": 0}}}
+    extend_short = cfg.builder.too_short_mode == "extend"
+    flag_resolution = cfg.builder.resolution_mode == "flag_unless_end"
+    cliff_ids = {c["line_id"] for c in moment_data["cliff_ends"]} if extend_short else set()
+    confidence_of = resolution_confidence(reveal_data, resolution_ids) if flag_resolution else {}
+    if extend_short:      # v2-only keys: a v1 summary never gains them
+        summary["extended_generated"] = 0
+    if flag_resolution:
+        summary["resolution_flagged_generated"] = 0
     survivors = []
     for hook in moment_data["hook_starts"]:
         for cliff in moment_data["cliff_ends"]:
@@ -224,6 +290,7 @@ def build_episode(episode: Episode, moment_data: dict, reveal_data: dict, intens
             summary["generated"] += 1
             spans = [(hook["line_id"], cliff["line_id"])]
             checked = check_promo(spans, index, _limits(cfg))
+            extended = False
             if checked.errors == ["TOO_LONG"]:
                 spans = montage_spans(episode, hook["line_id"], cliff["line_id"], index, cfg)
                 if spans is None:
@@ -231,10 +298,15 @@ def build_episode(episode: Episode, moment_data: dict, reveal_data: dict, intens
                     summary["checker_errors"]["MONTAGE_CONSTRUCTION"] = summary["checker_errors"].get("MONTAGE_CONSTRUCTION", 0) + 1
                     continue
             elif not checked.ok:
-                summary["dropped"]["checker"] += 1
-                for error in checked.errors:
-                    summary["checker_errors"][error] = summary["checker_errors"].get(error, 0) + 1
-                continue
+                grown = (extend_end(episode, index, hook["line_id"], cliff["line_id"], cfg, resolution_ids, cliff_ids)
+                         if extend_short and checked.errors == ["TOO_SHORT"] else None)
+                if grown is None:
+                    summary["dropped"]["checker"] += 1
+                    for error in checked.errors:
+                        summary["checker_errors"][error] = summary["checker_errors"].get(error, 0) + 1
+                    continue
+                spans, extended = [grown], True
+                summary["extended_generated"] += 1
             spans, reaction_cut, reactions = include_reactions(episode, spans, index, cfg)
             checked = check_promo(spans, index, _limits(cfg))
             if not checked.ok:
@@ -264,15 +336,26 @@ def build_episode(episode: Episode, moment_data: dict, reveal_data: dict, intens
                      "contains_reveal": bool(set(ids) & reveal_ids),
                      "contains_low_conf_resolution": bool(set(ids) & resolutions["low"]),
                      "speakers_4": speaker_count == cfg.builder.speakers_soft}
+            res_at_end = False
+            if extended:
+                flags["extended"] = True
+            if flag_resolution:
+                positions = resolution_positions(checked.segments, index, confidence_of)
+                res_at_end = any(p["at_end"] for p in positions)
+                if positions and not res_at_end:
+                    flags["contains_blocking_resolution"] = True
+                    summary["resolution_flagged_generated"] += 1
             for confidence, marked in resolutions.items():
                 summary["resolution_intersections_by_confidence"][confidence] += bool(set(ids) & marked)
             blocking = [c for c in ("high", "medium", "low") if c in cfg.spoiler.resolution_block_confidence and set(ids) & resolutions[c]]
-            if blocking:
+            if blocking and (not flag_resolution or res_at_end):
                 summary["resolution_drops_by_confidence"][blocking[0]] += 1
             montage = len(spans) == 2
             score = int(hook["strength"]) + int(cliff["strength"]) + sum(smooth[key] for key in ids) / len(ids)
             score -= sum(getattr(cfg.builder.penalties, flag) for flag in ("possible_recap", "reaction_cut", "speakers_4") if flags[flag])
             score -= cfg.builder.penalties.montage if montage else 0
+            if flags.get("contains_blocking_resolution"):
+                score -= RESOLUTION_FLAG_PENALTY
             survivors.append({"episode": episode.ep, "segments": [
                 {"episode": seg.ep, "start_ms": seg.start_ms, "end_ms": seg.end_ms,
                  "first_line_id": seg.line_ids[0], "last_line_id": seg.line_ids[-1]} for seg in checked.segments],
@@ -281,13 +364,14 @@ def build_episode(episode: Episode, moment_data: dict, reveal_data: dict, intens
                 "cliff": {"line_id": cliff["line_id"], "type": cliff["cliff_type"], "strength": cliff["strength"], "source": cliff["source"]},
                 "pre_score": score, "flags": flags, "policy": scanner.promo_flags(ids), "montage": montage,
                 "provenance": {"moments": _provenance(moment_data), "reveals": _provenance(reveal_data)},
-                "_hook_order": index[hook["line_id"]].idx, "_cliff_order": index[cliff["line_id"]].idx})
+                "_hook_order": index[hook["line_id"]].idx, "_cliff_order": index[cliff["line_id"]].idx,
+                "_res_at_end": res_at_end})
     branches = {}
     for mode in ("block", "flag"):
         pool = []
         drops = dict(summary["dropped"])
         for promo in survivors:
-            if set(promo["line_ids"]) & resolution_ids:
+            if promo["_res_at_end"] if flag_resolution else set(promo["line_ids"]) & resolution_ids:
                 drops["resolution"] += 1
             elif episode.ep >= cfg.spoiler.late_series_start:
                 drops["late_series"] += 1
@@ -368,6 +452,12 @@ def run(cfg: Config, episodes: list[Episode], *, allow_held_out: bool = False) -
                "recap_flagged_kept_by_method": recap,
                "reveal_mode_comparison": {mode: sum(s["reveal_mode_comparison"][mode]["kept"] for s in summaries.values())
                                           for mode in ("block", "flag")}}
+    if cfg.builder.too_short_mode == "extend":
+        summary["extended_generated"] = sum(s["extended_generated"] for s in summaries.values())
+        summary["extended_kept"] = sum(bool(p["flags"].get("extended")) for p in all_promos)
+    if cfg.builder.resolution_mode == "flag_unless_end":
+        summary["resolution_flagged_generated"] = sum(s["resolution_flagged_generated"] for s in summaries.values())
+        summary["resolution_flagged_kept"] = sum(bool(p["flags"].get("contains_blocking_resolution")) for p in all_promos)
     # All requested artifacts and results are validated before replacing outputs.
     for episode in episodes:
         write_json(cfg.output_root / f"promos/candidates_E{episode.ep:02d}.json", outputs[episode.ep])

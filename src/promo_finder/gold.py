@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
 from .checker import check_promo
-from .labelling import BLOCKS, HELD_OUT, fmt_ms
+from .labelling import BLOCKS, HELD_OUT_SPLIT, Split, compact_eps, fmt_ms
 from .models import Line, Segment
 from .tiou import set_tiou
 
@@ -26,8 +26,8 @@ CLIFFS = {f"C{i}" for i in range(1, 10)}
 NEG_CODES = {f"N{i}" for i in range(1, 7)}
 MAX_RATIONALE_WORDS = 20
 POS_TIOU_LIMIT = 0.5
-POS_RANGE = (12, 18)   # "about 15" positives
-NEG_RANGE = (3, 7)     # "about 5" negatives
+POS_RANGE = HELD_OUT_SPLIT.pos_range   # "about 15" positives (held-out; the fresh split has its own)
+NEG_RANGE = HELD_OUT_SPLIT.neg_range   # "about 5" negatives
 MIN_POS_PER_BLOCK = 3  # rubric: at least 3 per block
 # Title/role words never treated as names (approved answer Q3, P01b).
 NAME_SKIP_WORDS = frozenset({"mr", "mrs", "ms", "dr", "doctor", "nurse", "guard", "officer",
@@ -35,7 +35,7 @@ NAME_SKIP_WORDS = frozenset({"mr", "mrs", "ms", "dr", "doctor", "nurse", "guard"
 
 ROW_CODES = (
     "BAD_COLUMNS", "MISSING_ID", "DUP_ID", "BAD_KIND", "BAD_GRADE", "BAD_HOOK", "BAD_CLIFF",
-    "BAD_NEG_CODE", "MISSING_SEG1", "SEG_GAP", "INCOMPLETE_SEG", "NOT_HELD_OUT", "EP_SKIP",
+    "BAD_NEG_CODE", "MISSING_SEG1", "SEG_GAP", "INCOMPLETE_SEG", "NOT_HELD_OUT", "NOT_IN_SPLIT", "EP_SKIP",
     "POS_OVERLAP", "EMPTY_RATIONALE", "RATIONALE_TOO_LONG", "NAME_IN_RATIONALE",
 )
 ID_RE = re.compile(r"^E(\d{2})-L(\d{3})$")
@@ -127,14 +127,15 @@ def _ep_of(line_id: str) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-def _block_of(ep: Optional[int]) -> Optional[str]:
-    for name, eps in BLOCKS.items():
+def _block_of(ep: Optional[int], blocks=BLOCKS) -> Optional[str]:
+    for name, eps in blocks.items():
         if ep in eps:
             return name
     return None
 
 
-def check_row(row_no: int, cells: list[str], index: Mapping[str, Line], patterns: list[re.Pattern], cfg=None) -> RowResult:
+def check_row(row_no: int, cells: list[str], index: Mapping[str, Line], patterns: list[re.Pattern], cfg=None,
+              split: Split = HELD_OUT_SPLIT) -> RowResult:
     if len(cells) != len(HEADER):
         r = RowResult(row_no=row_no, gold_id=(cells[0].strip() if cells else ""), kind="?")
         r.err("BAD_COLUMNS")
@@ -183,13 +184,13 @@ def check_row(row_no: int, cells: list[str], index: Mapping[str, Line], patterns
         for a, b in spans:
             for x in (a, b):
                 ep = _ep_of(x)
-                if ep is not None and ep not in HELD_OUT:
-                    r.err("NOT_HELD_OUT")
+                if ep is not None and ep not in split.episodes:
+                    r.err(split.not_in_code)
         eps = [_ep_of(a) for a, _ in spans]
         for p, q in zip(eps, eps[1:]):
             if p is not None and q is not None and q > p + 1:
                 r.err("EP_SKIP")
-        ep_errors = bool({"NOT_HELD_OUT", "EP_SKIP"} & set(r.errors))
+        ep_errors = bool({split.not_in_code, "EP_SKIP"} & set(r.errors))
         res = check_promo(spans, index, cfg)
         for code in res.errors:
             r.err(code)
@@ -209,12 +210,12 @@ def check_row(row_no: int, cells: list[str], index: Mapping[str, Line], patterns
 
 
 def check_sheet(header: list[str], rows: list[tuple[int, list[str]]], index: Mapping[str, Line],
-                speakers: Iterable[str], cfg=None) -> GoldReport:
+                speakers: Iterable[str], cfg=None, split: Split = HELD_OUT_SPLIT) -> GoldReport:
     if header != HEADER:
         return GoldReport(rows=[], file_errors=["BAD_HEADER (must equal eval/gold_template.csv exactly)"],
                           warnings=[], blocks={}, totals={})
     patterns = name_patterns(speakers)
-    results = [check_row(n, cells, index, patterns, cfg) for n, cells in rows]
+    results = [check_row(n, cells, index, patterns, cfg, split) for n, cells in rows]
 
     counts: dict[str, int] = {}
     for r in results:
@@ -233,30 +234,32 @@ def check_sheet(header: list[str], rows: list[tuple[int, list[str]]], index: Map
                 a.err(f"POS_OVERLAP({b.gold_id})")
                 b.err(f"POS_OVERLAP({a.gold_id})")
 
-    blocks = {name: {"pos": 0, "neg": 0} for name in BLOCKS}
+    blocks = {name: {"pos": 0, "neg": 0} for name in split.blocks}
     blocks["other"] = {"pos": 0, "neg": 0}
     for r in results:
         if r.kind in ("pos", "neg"):
-            blocks[_block_of(r.first_ep) or "other"][r.kind] += 1
+            blocks[_block_of(r.first_ep, split.blocks) or "other"][r.kind] += 1
     totals = {"pos": sum(b["pos"] for b in blocks.values()), "neg": sum(b["neg"] for b in blocks.values())}
 
     warnings: list[str] = []
     if results:
-        for name in BLOCKS:
+        for name in split.blocks:
             if blocks[name]["pos"] < MIN_POS_PER_BLOCK:
                 warnings.append(f"WARNING block {name}: {blocks[name]['pos']} positives (< {MIN_POS_PER_BLOCK})")
             if blocks[name]["neg"] == 0:
                 warnings.append(f"WARNING block {name}: 0 negatives")
-        if not POS_RANGE[0] <= totals["pos"] <= POS_RANGE[1]:
-            warnings.append(f"WARNING total positives {totals['pos']} outside {POS_RANGE[0]}-{POS_RANGE[1]} (~15)")
-        if not NEG_RANGE[0] <= totals["neg"] <= NEG_RANGE[1]:
-            warnings.append(f"WARNING total negatives {totals['neg']} outside {NEG_RANGE[0]}-{NEG_RANGE[1]} (~5)")
+        lo, hi = split.pos_range
+        if not lo <= totals["pos"] <= hi:
+            warnings.append(f"WARNING total positives {totals['pos']} outside {lo}-{hi} ({split.pos_target})")
+        lo, hi = split.neg_range
+        if not lo <= totals["neg"] <= hi:
+            warnings.append(f"WARNING total negatives {totals['neg']} outside {lo}-{hi} ({split.neg_target})")
     return GoldReport(rows=results, file_errors=[], warnings=warnings, blocks=blocks, totals=totals)
 
 
 # ---------- output ----------
 
-def format_report(rep: GoldReport, file_warnings: list[str]) -> list[str]:
+def format_report(rep: GoldReport, file_warnings: list[str], split: Split = HELD_OUT_SPLIT) -> list[str]:
     out = list(file_warnings)
     if rep.file_errors:
         return out + [f"ERROR {e}" for e in rep.file_errors]
@@ -268,12 +271,12 @@ def format_report(rep: GoldReport, file_warnings: list[str]) -> list[str]:
         segs = "; ".join(f"E{s.ep:02d}  {fmt_ms(s.start_ms)}–{fmt_ms(s.end_ms)}" for s in r.segments)
         out.append(f"{gid}  {r.kind}  {status}  {r.total_ms / 1000:.1f}s  {segs}".rstrip())
     out.append(f"{len(rep.rows)} rows")
-    for name, eps in BLOCKS.items():
+    for name, eps in split.blocks.items():
         b = rep.blocks[name]
-        out.append(f"block {name} ({eps[0]}-{eps[-1]}): pos={b['pos']} neg={b['neg']}")
+        out.append(f"block {name} ({compact_eps(eps)}): pos={b['pos']} neg={b['neg']}")
     o = rep.blocks["other"]
     if o["pos"] or o["neg"]:
-        out.append(f"block other (not held-out / unreadable): pos={o['pos']} neg={o['neg']}")
+        out.append(f"block other ({split.other_label}): pos={o['pos']} neg={o['neg']}")
     out.append(f"total: pos={rep.totals['pos']} neg={rep.totals['neg']}")
     out.extend(rep.warnings)
     n_err = sum(1 for r in rep.rows if r.errors)

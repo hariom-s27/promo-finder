@@ -94,8 +94,12 @@ def kendall_tau_b(xs, ys):
 
 
 def review_reasons(promo, judged, values, formula):
+    # v2 (F5b): a promo that holds a medium/high resolution line away from its end goes to the needs_human lane.
+    # Lane label only: the evaluation order keeps the S rank of needs_human rows (D66). The flag exists only
+    # when the builder's resolution switch is on, so v1 candidates never get this reason.
+    blocking = ["blocking_resolution"] if promo["flags"].get("contains_blocking_resolution") else []
     if values is None:
-        return ["missing_evidence"]
+        return ["missing_evidence", *blocking]
     reasons = []
     if values["P"] >= formula["lanes"]["policy_threshold"]:
         reasons.append("policy")
@@ -104,7 +108,7 @@ def review_reasons(promo, judged, values, formula):
         reasons.append("flip_rate")
     if promo["flags"].get("contains_reveal") and judged["aggregate"]["answers"]["spoils_ending"] == "yes":
         reasons.append("reveal_and_ending")
-    return reasons
+    return reasons + blocking
 
 
 def launch_batch(rows, size=5):
@@ -224,6 +228,9 @@ def run(cfg, episodes, *, allow_held_out=False):
                "judge_selected": sum(r["judge"] is not None for r in rows),
                "coverage_all_candidates": len(scored) / len(rows) if rows else None,
                "coverage_selected": len(scored) / sum(r["judge"] is not None for r in rows) if any(r["judge"] is not None for r in rows) else None}
+    flagged = sum("blocking_resolution" in row["needs_human_reasons"] for row in rows)
+    if flagged:  # v2-only key: a v1 ranking summary never gains it
+        summary["blocking_resolution_rows"] = flagged
     write_json(cfg.output_root / "ranked/promos_dev.json", {"summary": summary, "promos": rows,
                "evaluation_order": [r["promo_id"] for r in rows],
                "sensitivity_order_S_no_funnel": [r["promo_id"] for r in evaluation_order(rows, "S_no_funnel")]})

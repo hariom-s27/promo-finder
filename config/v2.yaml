@@ -1,0 +1,11 @@
+# P08b v2 overlay: the two approved builder switches and nothing else.
+# Use with --config-overlay config/v2.yaml. An overlay may set only these keys (config.read_overlay).
+version: 2
+builder:
+  # F2: extend a too-short clip's end, line by line, to the first boundary that reaches 20 s.
+  # May end on the next cliff line, never past it, and stops before any medium/high resolution line.
+  too_short_mode: extend
+  # F5b: drop a candidate only if a medium/high resolution line is its final line or ends inside the last 3 s
+  # of its final segment. Otherwise keep it, flag contains_blocking_resolution and subtract 0.5 from pre_score.
+  # The score formula (S) is unchanged; flagged promos go to the needs_human lane (label only).
+  resolution_mode: flag_unless_end

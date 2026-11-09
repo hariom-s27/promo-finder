@@ -124,6 +124,9 @@ class BuilderCfg(BaseModel):
     recap_prev_tail_lines: int = Field(default=15, ge=1)
     recap_fallback_s: float = Field(default=5, ge=0, allow_inf_nan=False)
     penalties: PenaltiesCfg = Field(default_factory=PenaltiesCfg)
+    # P08b v2 switches. The defaults are v1 behaviour; only an approved overlay (config/v2.yaml) turns them on.
+    too_short_mode: Literal["drop", "extend"] = "drop"                 # F2: extend a too-short clip's end to 20 s
+    resolution_mode: Literal["drop", "flag_unless_end"] = "drop"       # F5b: keep, flag and penalise unless at the end
 
     @model_validator(mode="after")
     def _bounds(self) -> "BuilderCfg":
@@ -213,6 +216,7 @@ class Config(BaseModel):
 
     _root: Path = PrivateAttr(default=PROJECT_ROOT)
     _config_path: Optional[Path] = PrivateAttr(default=None)
+    _overlay_path: Optional[Path] = PrivateAttr(default=None)
     _run_name: str = PrivateAttr(default="dev")
 
     @property
@@ -273,7 +277,34 @@ def model_quota(cfg: Config, model_key: str) -> dict:
             "effective_tpm": provider.tpm, "effective_rpm": provider.rpm}
 
 
-def load_config(path: Optional[Path | str] = None) -> Config:
+# An overlay may only set these keys: no prompt, schema, model, judge, temperature or other setting can change.
+OVERLAY_TOP_KEYS = ("version", "builder")
+OVERLAY_BUILDER_KEYS = ("too_short_mode", "resolution_mode")
+
+
+def read_overlay(path: Path) -> dict:
+    """Read and whitelist-check a config overlay (e.g. config/v2.yaml). Never prints its contents."""
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        raise ConfigError("overlay file is unreadable or not valid YAML") from None
+    if not isinstance(raw, dict):
+        raise ConfigError("overlay must be a mapping")
+    extra = sorted(str(k) for k in set(raw) - set(OVERLAY_TOP_KEYS))
+    if extra:
+        raise ConfigError("overlay key not allowed: " + ", ".join(extra))
+    builder = raw.get("builder", {})
+    if not isinstance(builder, dict):
+        raise ConfigError("overlay builder section must be a mapping")
+    bad = sorted(str(k) for k in set(builder) - set(OVERLAY_BUILDER_KEYS))
+    if bad:
+        raise ConfigError("overlay builder key not allowed: " + ", ".join(bad))
+    if "version" in raw and (isinstance(raw["version"], bool) or not isinstance(raw["version"], int)):
+        raise ConfigError("overlay version must be an integer")
+    return raw
+
+
+def load_config(path: Optional[Path | str] = None, overlay: Optional[Path | str] = None) -> Config:
     p = Path(path or os.environ.get("KUKU_CONFIG") or (PROJECT_ROOT / "config.yaml"))
     if not p.is_file():
         raise ConfigError(f"config file not found: {p}")
@@ -283,6 +314,23 @@ def load_config(path: Optional[Path | str] = None) -> Config:
         raise ConfigError(f"config.yaml is not valid YAML: {e}") from None
     if os.environ.get("KUKU_DATA_DIR"):
         raw["data_dir"] = os.environ["KUKU_DATA_DIR"]
+    overlay_path = None
+    if overlay:
+        overlay_path = Path(overlay)
+        if not overlay_path.is_absolute():
+            overlay_path = p.resolve().parent / overlay_path
+        try:
+            overlay_path = overlay_path.resolve()
+            overlay_path.relative_to(p.resolve().parent)
+        except ValueError:
+            raise ConfigError("overlay must be inside the project folder") from None
+        if not overlay_path.is_file():
+            raise ConfigError("overlay file not found")
+        patch = read_overlay(overlay_path)
+        base = raw.get("builder") or {}
+        if not isinstance(base, dict):
+            raise ConfigError("config builder section must be a mapping")
+        raw["builder"] = {**base, **patch.get("builder", {})}
     try:
         cfg = Config.model_validate(raw)
     except ValidationError as e:
@@ -291,6 +339,7 @@ def load_config(path: Optional[Path | str] = None) -> Config:
     root = p.resolve().parent
     cfg._root = root
     cfg._config_path = p.resolve()
+    cfg._overlay_path = overlay_path
     if not cfg.data_dir.is_absolute():
         cfg.data_dir = (root / cfg.data_dir).resolve()
     return cfg
